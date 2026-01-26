@@ -23,12 +23,14 @@ class DocumentAnalyzer:
         SARCINA: Identifică tipul documentului și extrage datele pentru dosarul de daună.
         
         TIPURI ACCEPTATE (tip_document):
-        ["CI" (Buletin), "PERMIS", "TALON" (Certificat Inmatriculare), "AMIABILA", "PROCURA", "ALTELE"]
+        ["CI" (Buletin), "PERMIS", "TALON" (Certificat Inmatriculare), "AMIABILA", "PROCURA", "EXTRAS" (Extras Cont), "ACTE_VINOVAT", "ALTELE"]
 
         EXTRAGERE DATE (date_extrase):
         - Pentru AMIABILA: Extrage 'nr_auto_a', 'vin_a', 'nume_sofer_a' (Vehicul A) și 'nr_auto_b', 'vin_b', 'nume_sofer_b' (Vehicul B).
         - Pentru TALON/PROCURA/ALTELE: Extrage 'nr_auto', 'vin', 'nume', 'cnp'.
         - Pentru BULETIN: Extrage 'nume', 'cnp'.
+        - Pentru EXTRAS: Extrage 'iban', 'titular_cont'.
+        - Pentru ACTE_VINOVAT: Extrage 'asigurator_vinovat', 'nr_polita'.
         
         ANALIZA ACCIDENT (analiza_accident):
         - Doar pentru Amiabilă: Cine pare vinovat? ("A", "B", sau "Comun").

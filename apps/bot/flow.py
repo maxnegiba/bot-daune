@@ -21,8 +21,6 @@ class FlowManager:
         """
         # 0. Verificăm intervenția umană
         if self.case.is_human_managed:
-            # Botul tace, răspunde omul.
-            # (Opțional: poți notifica adminul aici că a scris clientul)
             return
 
         stage = self.case.stage
@@ -31,32 +29,37 @@ class FlowManager:
         if stage == Case.Stage.GREETING:
             self._handle_greeting(content)
 
-        # --- ETAPA 2: COLLECTING DOCS (Documente) ---
+        # --- ETAPA 2: COLLECTING DOCS (Documente & Rezoluție) ---
         elif stage == Case.Stage.COLLECTING_DOCS:
             if message_type == "image" and media_urls:
                 self._handle_image_upload(media_urls)
             else:
-                # Dacă scrie text în loc să trimită poză, verificăm ce îi lipsește
+                # Dacă primim text, verificăm dacă e o alegere de rezoluție
+                if self._try_handle_resolution_text(content):
+                    return
+
+                # Altfel, verificăm statusul documentelor (poate userul întreabă ceva)
                 self._check_documents_status()
 
-        # --- ETAPA 3: SELECTING RESOLUTION (Regie/Service) ---
+        # --- ETAPA 3: SELECTING RESOLUTION (Legacy / Fallback) ---
         elif stage == Case.Stage.SELECTING_RESOLUTION:
-            self._handle_resolution(content)
+            self._try_handle_resolution_text(content)
 
         # --- ETAPA 4: SEMNATURA (Mandat) ---
         elif stage == Case.Stage.SIGNING_MANDATE:
-            # Dacă utilizatorul scrie ceva în timp ce așteptăm semnătura, îi reamintim linkul
             self._send_signature_link()
 
-        # --- ALTE ETAPE (Procesare, Închis etc.) ---
+        # --- ALTE ETAPE ---
         elif stage == Case.Stage.PROCESSING_INSURER:
             wa.send_text(
                 self.phone,
                 "Dosarul este în analiză la asigurator. Te vom anunța când primim o ofertă.",
             )
+        elif stage == Case.Stage.OFFER_DECISION:
+             self._handle_offer_decision(content)
 
     # =========================================================================
-    # LOGICA DETALIATĂ PE ETAPE
+    # LOGICA DETALIATĂ
     # =========================================================================
 
     def _handle_greeting(self, text):
@@ -65,10 +68,32 @@ class FlowManager:
             # Trecem la pasul următor
             self.case.stage = Case.Stage.COLLECTING_DOCS
             self.case.save()
-            wa.send_text(
-                self.phone,
-                "✅ Am deschis dosarul. Te rog trimite o poză clară cu **Buletinul**.",
+
+            # 1. Mesaj Documente
+            msg_docs = (
+                "✅ Am deschis dosarul. Te rog încarcă următoarele documente (poze clare):\n\n"
+                "📌 **OBLIGATORIU:**\n"
+                "- Buletinul (CI) persoanei păgubite\n"
+                "- Talonul (Certificat Înmatriculare) auto avariat\n"
+                "- Amiabila sau Proces Verbal Poliție\n"
+                "- Video 360° cu mașina avariată (sau poze din toate unghiurile)\n\n"
+                "📌 **OPȚIONAL (Dacă ai):**\n"
+                "- Autorizație Reparație (de la Poliție)\n"
+                "- Documente șofer vinovat (RCA, Talon, CI)\n"
+                "- Alte documente relevante\n\n"
+                "Extras Cont Bancar (dacă dorești Regie Proprie)\n\n"
+                "Te rog începe să le încarci acum."
             )
+            wa.send_text(self.phone, msg_docs)
+
+            # 2. Mesaj Rezoluție (Imediat după)
+            msg_res = "Cum dorești să soluționezi acest dosar?"
+            wa.send_buttons(
+                self.phone,
+                msg_res,
+                ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"]
+            )
+
         elif "alta" in text or "nu" in text:
             self.case.is_human_managed = True
             self.case.save()
@@ -77,7 +102,6 @@ class FlowManager:
                 "Am înțeles. Un operator uman a fost notificat și te va contacta în curând.",
             )
         else:
-            # Dacă scrie altceva, reafișăm meniul
             wa.send_buttons(
                 self.phone,
                 "Nu am înțeles. Dorești să deschidem un dosar de daună?",
@@ -85,122 +109,197 @@ class FlowManager:
             )
 
     def _handle_image_upload(self, media_urls):
-        """
-        Descarcă imaginile, le salvează și declanșează AI-ul.
-        """
         saved_count = 0
         for url, mime_type in media_urls:
             try:
-                # 1. Descărcăm poza de la Twilio
-                # Folosim un User-Agent fake pentru a evita blocarea
                 headers = {"User-Agent": "Mozilla/5.0"}
                 r = requests.get(url, headers=headers, timeout=15)
-
                 if r.status_code == 200:
-                    # Determinăm extensia
                     ext = mime_type.split("/")[-1]
-                    if ext not in ["jpeg", "jpg", "png", "pdf"]:
-                        ext = "jpg"
+                    # Detect video simplificat
+                    is_video = False
+                    if "video" in mime_type or ext in ["mp4", "mov", "avi", "3gp"]:
+                         is_video = True
+                         ext = "mp4" # Forțăm extensia
+                    elif ext not in ["jpeg", "jpg", "png", "pdf"]:
+                         ext = "jpg"
 
                     file_name = f"{self.case.id}_{os.path.basename(url)}.{ext}"
 
-                    # 2. Creăm obiectul Document
+                    doc_type = CaseDocument.DocType.UNKNOWN
+                    if is_video:
+                         doc_type = CaseDocument.DocType.DAMAGE_PHOTO
+
                     doc = CaseDocument.objects.create(
                         case=self.case,
-                        doc_type=CaseDocument.DocType.UNKNOWN,  # AI-ul va decide ce e
+                        doc_type=doc_type,
                         ocr_data={},
                     )
                     doc.file.save(file_name, ContentFile(r.content))
 
-                    # 3. Trimitem la AI (Worker-ul din tasks.py)
-                    analyze_document_task.delay(doc.id)
+                    if is_video:
+                        self.case.has_scene_video = True
+                        self.case.save()
+                        # Nu trimitem la AI video-ul
+                    else:
+                        # Trimitem la AI doar imaginile/pdf
+                        analyze_document_task.delay(doc.id)
+
                     saved_count += 1
             except Exception as e:
                 print(f"Eroare download {url}: {e}")
 
         if saved_count > 0:
-            # Confirmăm primirea, dar NU schimbăm stadiul încă.
-            # Task-ul AI va apela check_status_and_notify() când termină.
-            wa.send_text(
-                self.phone, f"Am primit {saved_count} document(e). Le analizez acum..."
-            )
+            wa.send_text(self.phone, f"Am primit {saved_count} fișier(e). Analizez...")
+            # Verificăm statusul imediat (pt Video)
+            self._check_documents_status()
 
-    def _check_documents_status(self):
-        """
-        Verifică manual ce lipsește și informează userul.
-        """
-        missing = []
-        if not self.case.has_id_card:
-            missing.append("Buletin")
-        if not self.case.has_car_coupon:
-            missing.append("Talon Auto")
-        if not self.case.has_accident_report:
-            missing.append("Amiabila / PV Politie")
-
-        if not missing:
-            # Avem tot -> Trecem la etapa 3
-            self.case.stage = Case.Stage.SELECTING_RESOLUTION
-            self.case.save()
-            wa.send_buttons(
-                self.phone,
-                "Dosar complet! Cum dorești să soluționezi?",
-                ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"],
-            )
-        else:
-            # Cerem ce lipsește
-            msg = "Pentru a continua, mai am nevoie de:\n- " + "\n- ".join(missing)
-            wa.send_text(self.phone, msg)
-
-    def _handle_resolution(self, text):
+    def _try_handle_resolution_text(self, text):
         text = text.lower()
+        choice_made = False
 
-        # --- OPȚIUNEA 1: SERVICE ---
         if "service" in text or "rar" in text:
             self.case.resolution_choice = Case.Resolution.SERVICE_RAR
-            self.case.is_human_managed = True  # STOP BOT, intră omul pentru programare
+            self.case.is_human_managed = True
             self.case.save()
             wa.send_text(
                 self.phone,
-                "✅ Am notat opțiunea Service. Un coleg va prelua dosarul pentru a stabili programarea în service.",
+                "✅ Am notat opțiunea Service. Un coleg va prelua dosarul pentru a stabili programarea.",
             )
+            return True # Stop processing
 
-        # --- OPȚIUNEA 2: REGIE PROPRIE (Fluxul Complet) ---
         elif "regie" in text:
             self.case.resolution_choice = Case.Resolution.OWN_REGIME
-            self.case.stage = Case.Stage.SIGNING_MANDATE
-            self.case.save()
-            self._send_signature_link()
+            choice_made = True
+            wa.send_text(self.phone, "✅ Am notat: Regie Proprie.")
 
-        # --- OPȚIUNEA 3: DAUNĂ TOTALĂ ---
+        elif "totala" in text:
+            self.case.resolution_choice = Case.Resolution.TOTAL_LOSS
+            choice_made = True
+            wa.send_text(self.phone, "✅ Am notat: Daună Totală.")
+
+        if choice_made:
+            self.case.save()
+            self._check_documents_status()
+            return True
+
+        return False
+
+    def _check_documents_status(self):
+        missing = []
+        if not self.case.has_id_card:
+            missing.append("Buletin (obligatoriu)")
+        if not self.case.has_car_coupon:
+            missing.append("Talon Auto (obligatoriu)")
+        if not self.case.has_accident_report:
+            missing.append("Amiabila / PV Politie (obligatoriu)")
+        if not self.case.has_scene_video:
+            missing.append("Video 360 Grade (obligatoriu)")
+
+        # Condiție Extras Cont
+        if self.case.resolution_choice == Case.Resolution.OWN_REGIME:
+            if not self.case.has_bank_statement:
+                 missing.append("Extras Cont Bancar (pt. Regie Proprie)")
+
+        if not missing:
+            # Avem actele. Avem rezoluția?
+            if self.case.resolution_choice == Case.Resolution.UNDECIDED:
+                 wa.send_buttons(
+                    self.phone,
+                    "Ai încărcat toate documentele obligatorii. Cum dorești să soluționezi?",
+                    ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"]
+                )
+            else:
+                # TOTUL GATA -> Mandat
+                self.case.stage = Case.Stage.SIGNING_MANDATE
+                self.case.save()
+                self._send_signature_link()
+        else:
+             # Nu suntem cicălitori dacă a trimis doar o parte, doar informăm
+             # DAR, fiindcă e apelat după fiecare upload, e bine să dăm feedback.
+             msg = "Mai am nevoie de:\n- " + "\n- ".join(missing)
+             wa.send_text(self.phone, msg)
+
+    def _handle_offer_decision(self, text):
+        text = text.lower()
+
+        # 1. Accept
+        if "accept" in text:
+            self.case.stage = Case.Stage.PROCESSING_INSURER # Back to waiting
+            self.case.save()
+
+            from apps.claims.tasks import send_offer_acceptance_email_task
+            send_offer_acceptance_email_task.delay(self.case.id)
+
+            wa.send_text(
+                self.phone,
+                "✅ Am trimis acceptul către asigurator. Te anunțăm când se confirmă plata/închiderea."
+            )
+            return
+
+        # 2. Change Option Request
+        if "schimb" in text or "modific" in text:
+            wa.send_buttons(
+                self.phone,
+                "Ce variantă preferi acum?",
+                ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"]
+            )
+            return
+
+        # 3. Handle New Option Selection
+        from apps.claims.tasks import send_option_change_email_task
+
+        if "service" in text or "rar" in text:
+            self.case.resolution_choice = Case.Resolution.SERVICE_RAR
+            self.case.is_human_managed = True
+            self.case.save()
+
+            send_option_change_email_task.delay(self.case.id, "Service Autorizat RAR")
+
+            wa.send_text(
+                self.phone,
+                "✅ Am notat schimbarea pe Service RAR. Un coleg te va contacta."
+            )
+            return
+
+        elif "regie" in text:
+            self.case.resolution_choice = Case.Resolution.OWN_REGIME
+            self.case.stage = Case.Stage.PROCESSING_INSURER # Back to waiting for new offer
+            self.case.save()
+
+            send_option_change_email_task.delay(self.case.id, "Regie Proprie")
+
+            wa.send_text(
+                self.phone,
+                "✅ Am notificat asiguratorul că dorești Regie Proprie. Așteptăm recalcularea."
+            )
+            return
+
         elif "totala" in text:
             self.case.resolution_choice = Case.Resolution.TOTAL_LOSS
             self.case.stage = Case.Stage.PROCESSING_INSURER
             self.case.save()
+
+            send_option_change_email_task.delay(self.case.id, "Dauna Totala")
+
             wa.send_text(
                 self.phone,
-                "Am înregistrat solicitarea de Daună Totală. Vom notifica asiguratorul și revenim cu oferta.",
+                "✅ Am notificat asiguratorul că soliciți Daună Totală."
             )
+            return
 
         else:
-            # Userul a scris altceva
             wa.send_buttons(
                 self.phone,
                 "Te rog alege o opțiune validă:",
-                ["Regie Proprie", "Service RAR", "Dauna Totala"],
+                ["Accept Oferta", "Schimb Optiunea"]
             )
 
     def _send_signature_link(self):
-        """
-        Generează și trimite link-ul de semnare.
-        """
-        # ÎN PRODUCȚIE: Schimbă domain cu site-ul tău real (ex: https://autodaune.ro)
-        # Pentru test local cu ngrok, pune url-ul de ngrok
         domain = "http://127.0.0.1:8000"
-
         link = f"{domain}/mandat/semneaza/{self.case.id}/"
-
         msg = (
-            "📝 Pentru a putea trimite dosarul la asigurator, avem nevoie de mandatul tău de reprezentare.\n\n"
-            f"Te rog intră aici și semnează direct pe ecran:\n{link}"
+            "📝 Dosar complet! Mai avem un singur pas: Semnarea Mandatului.\n"
+            f"Te rog intră aici și semnează:\n{link}"
         )
         wa.send_text(self.phone, msg)
