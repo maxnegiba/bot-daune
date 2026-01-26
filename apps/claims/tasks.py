@@ -1,125 +1,219 @@
-import os
-import json
-import re
 from celery import shared_task
-from google import genai
-from google.genai import types
-from .models import CaseDocument
-
-# Configurare
-GOOGLE_KEY = os.getenv("GOOGLE_API_KEY")
-# Folosim 1.5 Flash pentru stabilitate OCR
-MODEL_NAME = os.getenv("GOOGLE_MODEL_NAME", "gemini-1.5-flash")
+from django.core.mail import EmailMessage
+from django.conf import settings
+from .models import Case, CaseDocument, Insurer, InvolvedVehicle
+from .services import DocumentAnalyzer
+from apps.bot.utils import WhatsAppClient
 
 
-def clean_json_response(content):
-    content = content.replace("```json", "").replace("```", "").strip()
+# --- TASK 1: Procesare Input (Documente & AI) ---
+@shared_task
+def analyze_document_task(document_id):
     try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", content, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        return {}
-
-
-@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=10, max_retries=3)
-def analyze_document_task(self, document_id):
-    try:
-        print(f"--- [AI WORKER] Start Doc ID: {document_id} | Model: {MODEL_NAME} ---")
+        print(f"--- [AI WORKER] Procesez Doc ID: {document_id} cu OpenAI ---")
 
         doc = CaseDocument.objects.get(id=document_id)
-        file_path = doc.file.path
+        case = doc.case
 
-        if not os.path.exists(file_path):
-            print("EROARE: Fișier lipsă.")
-            return
+        # 1. Analiza OpenAI
+        result = DocumentAnalyzer.analyze(doc.file.path)
+        print(f"🤖 Rezultat AI: {result}")
 
-        client = genai.Client(api_key=GOOGLE_KEY)
+        # 2. Salvare date OCR
+        # NOTA: Acest save() va declanșa signals.py care populează vehiculele!
+        doc.ocr_data = result
 
-        with open(file_path, "rb") as f:
-            image_bytes = f.read()
+        # Mapăm tipul primit de la AI la Enum-ul din Django
+        tip_ai = result.get("tip_document", "").upper()
 
-        # PROMPT CHIRURGICAL - BAZAT PE LOCAȚIE VIZUALĂ
-        prompt = """
-        Analizează imaginea atașată strict ca un scanner OCR.
-        
-        SARCINA 1: IDENTIFICARE TIP
-        - Dacă vezi "Constatare Amiabilă", este "AMIABILA".
-        - Dacă vezi "Mandat" sau "Imputernicire", este "PROCURA".
-        
-        SARCINA 2: EXTRAGERE DATE (FĂRĂ HALUCINAȚII)
-        - Caută textul scris de mână sau tipărit.
-        - NU scrie "Popescu" sau "B 123 ABC" decât dacă scrie clar pe foaie.
-        - Dacă un câmp e neclar, scrie null.
-        
-        DETALII PENTRU AMIABILĂ:
-        - Vehicul A (Stânga): Caută la punctul 6 (Asigurat) -> Nume. Caută la punctul 7 (Vehicul) -> Nr. Înmatriculare.
-        - Vehicul B (Dreapta): Caută la punctul 6 (Asigurat) -> Nume. Caută la punctul 7 (Vehicul) -> Nr. Înmatriculare.
-        
-        DETALII PENTRU PROCURĂ:
-        - Caută numele persoanei care dă mandatul ("Subsemnatul").
-        - Caută numărul auto ("nr. inmatriculare") și VIN-ul ("sasiu").
+        if "CI" in tip_ai or "BULETIN" in tip_ai:
+            doc.doc_type = CaseDocument.DocType.ID_CARD
+            case.has_id_card = True
+            # Optional: Salvăm CNP pe client
+            date = result.get("date_extrase", {})
+            if date.get("cnp"):
+                case.client.cnp = date.get("cnp")
+                case.client.full_name = date.get("nume")
+                case.client.save()
 
-        Răspunde JSON:
-        {
-            "tip_document": "...",
-            "date_extrase": { 
-                "nume": "...", 
-                "nr_auto": "...", 
-                "vin": "..."
-            },
-            "analiza_accident": { 
-                "vinovat_probabil": "Vehicul A / B", 
-                "motiv": "..." 
-            }
-        }
-        """
+        elif "TALON" in tip_ai:
+            doc.doc_type = CaseDocument.DocType.CAR_REGISTRATION
+            case.has_car_coupon = True
 
-        # CONFIGURARE DRACONICĂ (Zero Creativitate)
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[
-                types.Content(
-                    parts=[
-                        types.Part.from_text(text=prompt),
-                        types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-                    ]
-                )
-            ],
-            config=types.GenerateContentConfig(
-                temperature=0.0,  # Îngheață creativitatea
-                top_p=0.1,  # Ia în considerare doar cele mai sigure litere
-                top_k=1,  # Alege doar varianta #1 statistică (fără alternative)
-                response_mime_type="application/json",
-            ),
-        )
+        elif "AMIABILA" in tip_ai or "CONSTATARE" in tip_ai:
+            doc.doc_type = CaseDocument.DocType.ACCIDENT_REPORT
+            case.has_accident_report = True
 
-        print(f"--- [AI RAW] ---\n{response.text[:200]}...")
+        elif "PROCURA" in tip_ai:
+            doc.doc_type = CaseDocument.DocType.POA_GENERATED
 
-        data = clean_json_response(response.text)
-        doc.ocr_data = data
-
-        # Mapare Tip
-        tip_raw = data.get("tip_document")
-        if tip_raw:
-            tip = tip_raw.upper()
-            if "CI" in tip:
-                doc.doc_type = CaseDocument.DocType.ID_CARD
-            elif "PERMIS" in tip:
-                doc.doc_type = CaseDocument.DocType.DRIVERS_LICENSE
-            elif "TALON" in tip:
-                doc.doc_type = CaseDocument.DocType.CAR_REGISTRATION
-            elif "AMIABILA" in tip:
-                doc.doc_type = CaseDocument.DocType.ACCIDENT_STATEMENT
-            elif "PROCURA" in tip:
-                doc.doc_type = CaseDocument.DocType.POWER_OF_ATTORNEY
-        else:
-            doc.doc_type = CaseDocument.DocType.UNKNOWN
-
+        # Salvăm documentul și dosarul (Flags updated)
         doc.save()
-        print(f"--- [AI WORKER] Succes! ---")
+        case.save()
+
+        # 3. Verificare Flux și Notificare
+        check_status_and_notify(case)
 
     except Exception as e:
         print(f"--- [AI ERROR] {e} ---")
-        raise self.retry(exc=e)
+
+
+def check_status_and_notify(case):
+    """
+    Verifică ce documente lipsesc și notifică clientul pe WhatsApp.
+    """
+    wa = WhatsAppClient()
+    phone = case.client.phone_number
+
+    # Lista de verificare
+    missing = []
+    if not case.has_id_card:
+        missing.append("Buletin (CI)")
+    if not case.has_car_coupon:
+        missing.append("Talon Auto")
+    if not case.has_accident_report:
+        missing.append("Amiabilă / Proces Verbal")
+
+    # Verificăm stadiul curent pentru a nu trimite mesaje inutile
+    if case.stage == Case.Stage.COLLECTING_DOCS:
+        if not missing:
+            # TOTUL E COMPLET -> Trecem la pasul următor
+            case.stage = Case.Stage.SELECTING_RESOLUTION
+            case.save()
+
+            wa.send_buttons(
+                phone,
+                "✅ Am primit toate documentele necesare!\nCum dorești să soluționezi dosarul?",
+                ["Regie Proprie", "Service Autorizat", "Dauna Totala"],
+            )
+        else:
+            # Încă lipsesc acte
+            doc_name = case.documents.last().get_doc_type_display()
+            msg = f"👍 Am validat {doc_name}.\nMai am nevoie de:\n- " + "\n- ".join(
+                missing
+            )
+            wa.send_text(phone, msg)
+
+
+# --- TASK 2: Procesare Output (Trimitere Email Asigurator) ---
+@shared_task
+def send_claim_email_task(case_id):
+    """
+    1. Caută numele asiguratorului vinovatului (extras de AI sau din baza de date).
+    2. Îl potrivește cu modelul Insurer (pentru a găsi emailul corect).
+    3. Trimite email cu toate documentele atașate.
+    """
+    try:
+        case = Case.objects.get(id=case_id)
+        client = case.client
+
+        print(f"📧 [EMAIL WORKER] Pregătesc trimiterea pentru dosar {case.id}")
+
+        # --- PASUL 1: Identificare Asigurator ---
+        target_email = "office@autodaune.ro"  # Fallback (default la noi dacă nu găsim)
+        target_name = "Administrator"
+
+        # Căutăm vehiculul vinovat
+        # Ne uităm în câmpul 'insurance_company_name' populat de AI (via signals)
+        guilty_vehicle = case.vehicles.filter(is_offender=True).first()
+
+        # Dacă nu e marcat explicit, luăm vehiculul care NU e al clientului (Role != VICTIM)
+        if not guilty_vehicle:
+            guilty_vehicle = case.vehicles.exclude(
+                role=InvolvedVehicle.Role.VICTIM
+            ).first()
+
+        detected_text = ""
+        if guilty_vehicle and guilty_vehicle.insurance_company_name:
+            detected_text = guilty_vehicle.insurance_company_name.lower()
+            print(f"🔍 Text asigurator detectat de AI: '{detected_text}'")
+
+        # Algoritm de Matching cu baza de date 'Insurer'
+        if detected_text:
+            all_insurers = Insurer.objects.all()
+            for insurer in all_insurers:
+                # Spargem identifierii: "allianz, tiriac" -> ['allianz', 'tiriac']
+                keywords = [k.strip().lower() for k in insurer.identifiers.split(",")]
+                for k in keywords:
+                    if k and k in detected_text:
+                        target_email = insurer.email_claims
+                        target_name = insurer.name
+
+                        # Salvăm în dosar ce am găsit
+                        case.insurer_name = insurer.name
+                        case.insurer_email = insurer.email_claims
+                        case.save()
+
+                        print(
+                            f"✅ MATCH ASIGURATOR: '{detected_text}' -> {insurer.name} ({target_email})"
+                        )
+                        break
+                if target_name != "Administrator":
+                    break
+        else:
+            print("⚠️ Nu am detectat numele asiguratorului. Trimit la fallback.")
+
+        # --- PASUL 2: Construire Email ---
+        subject = f"Avizare Dauna Auto - {client.full_name} - Dosar {str(case.id)[:8]}"
+
+        body = f"""
+        Buna ziua,
+        
+        În atenția departamentului de daune {target_name},
+        
+        Prin prezenta, vă transmitem solicitarea de deschidere dosar de daună pentru clientul nostru:
+        Nume: {client.full_name}
+        CNP: {client.cnp or '-'}
+        Telefon: {client.phone_number}
+        
+        Atașat regăsiți documentele necesare instrumentării dosarului (Mandat, Amiabilă, Acte, Foto).
+        
+        Vă rugăm să ne confirmați primirea și să ne comunicați numărul de dosar alocat prin Reply la acest email.
+        
+        Cu stimă,
+        Echipa Auto Daune Bot
+        """
+
+        email = EmailMessage(
+            subject=subject,
+            body=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[target_email],
+            cc=["office@autodaune.ro"],  # Copie către administrator
+        )
+
+        # --- PASUL 3: Atașare Documente ---
+        docs = CaseDocument.objects.filter(case=case)
+        count = 0
+        for doc in docs:
+            if doc.file:
+                try:
+                    # Determinăm tipul (PDF sau Imagine)
+                    fname = doc.file.name.lower()
+                    if fname.endswith(".pdf"):
+                        content_type = "application/pdf"
+                    elif fname.endswith(".png"):
+                        content_type = "image/png"
+                    else:
+                        content_type = "image/jpeg"
+
+                    # Nume fișier lizibil pentru atașament
+                    doc_label = doc.get_doc_type_display().replace(" ", "_")
+                    clean_name = f"{doc_label}_{count}.{fname.split('.')[-1]}"
+
+                    # Citim și atașăm
+                    email.attach(clean_name, doc.file.read(), content_type)
+                    count += 1
+                except Exception as e:
+                    print(f"⚠️ Eroare atașare {doc.file.name}: {e}")
+
+        # --- PASUL 4: Trimitere ---
+        email.send()
+
+        # Confirmăm pe consolă
+        print(f"🚀 Email trimis cu succes la {target_email}")
+
+        # Notă: Nu schimbăm 'stage' aici, rămâne PROCESSING_INSURER până răspund ei.
+
+    except Exception as e:
+        print(f"❌ EROARE CRITICĂ SEND EMAIL: {e}")

@@ -138,3 +138,11 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
+# config/settings.py
+
+# ... existing settings ...
+
+# Twilio Configuration (Placeholders for development)
+TWILIO_ACCOUNT_SID = "AC_PLACEHOLDER"
+TWILIO_AUTH_TOKEN = "AUTH_PLACEHOLDER"
+TWILIO_WHATSAPP_NUMBER = "whatsapp:+14155238886"  # Twilio Sandbox Number
