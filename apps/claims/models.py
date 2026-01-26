@@ -60,6 +60,13 @@ class Case(models.Model):
         default=False, verbose_name="Are Aut. Reparație?"
     )  # Optional
     has_scene_video = models.BooleanField(default=False, verbose_name="Are Video 360?")
+    has_bank_statement = models.BooleanField(
+        default=False, verbose_name="Are Extras Cont?"
+    )  # Conditional (Regie Proprie)
+    has_guilty_docs = models.BooleanField(
+        default=False, verbose_name="Are Acte Vinovat?"
+    )  # Optional
+
     has_mandate_signed = models.BooleanField(
         default=False, verbose_name="Mandat Semnat?"
     )
@@ -135,6 +142,7 @@ class CaseDocument(models.Model):
         REPAIR_AUTH = "AUT_REP", _("Autorizație Reparație")
         DAMAGE_PHOTO = "PHOTO", _("Poză Daună / Video")
         BANK_STATEMENT = "EXTRAS", _("Extras Cont")
+        GUILTY_PARTY_DOCS = "VINV", _("Acte Vinovat")
         OTHER_DOCS = "ALTELE", _("Alte Documente")
 
         # Documente generate/semnate
