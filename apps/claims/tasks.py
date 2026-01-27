@@ -9,6 +9,7 @@ import email
 from email.header import decode_header
 import re
 import os
+import requests
 
 
 # --- TASK 1: Procesare Input (Documente & AI) ---
@@ -80,6 +81,10 @@ def check_status_and_notify(case):
     """
     Verifică ce documente lipsesc și notifică clientul pe WhatsApp.
     """
+    # Dacă dosarul este pe mod manual (ex: Service RAR), nu trimitem notificări automate
+    if case.is_human_managed:
+        return
+
     wa = WhatsAppClient()
     phone = case.client.phone_number
 
@@ -102,25 +107,13 @@ def check_status_and_notify(case):
     # Verificăm stadiul curent pentru a nu trimite mesaje inutile
     if case.stage == Case.Stage.COLLECTING_DOCS:
         if not missing:
-            # TOTUL E COMPLET -> Trecem la pasul următor
-            case.stage = Case.Stage.SELECTING_RESOLUTION
-            case.save()
-
-            # Dacă rezoluția nu e aleasă, întrebăm din nou (sau prima dată dacă task-ul a terminat ultimul doc)
-            if case.resolution_choice == Case.Resolution.UNDECIDED:
-                wa.send_buttons(
-                    phone,
-                    "✅ Am primit toate documentele necesare!\nCum dorești să soluționezi dosarul?",
-                    ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"],
-                )
-            else:
-                 # Totul e gata -> Mandat
+            # TOTUL E COMPLET (DOCUMENTE)
+            # Dacă rezoluția este deja aleasă, trecem direct la Mandat
+            if case.resolution_choice != Case.Resolution.UNDECIDED:
                  case.stage = Case.Stage.SIGNING_MANDATE
                  case.save()
 
                  # Trimitem link semnare
-                 # Trebuie să duplicăm logica de trimitere link sau să apelăm o funcție comună?
-                 # Pentru simplitate, trimitem textul aici.
                  domain = "http://127.0.0.1:8000"
                  link = f"{domain}/mandat/semneaza/{case.id}/"
                  msg = (
@@ -128,9 +121,17 @@ def check_status_and_notify(case):
                     f"Te rog intră aici și semnează:\n{link}"
                  )
                  wa.send_text(phone, msg)
+            else:
+                # Nu avem rezoluția, întrebăm din nou. Nu schimbăm stadiul încă.
+                wa.send_buttons(
+                    phone,
+                    "✅ Am primit toate documentele necesare! Cum dorești să soluționezi dosarul?",
+                    ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"],
+                )
         else:
             # Încă lipsesc acte
-            doc_name = case.documents.last().get_doc_type_display()
+            doc_obj = case.documents.last()
+            doc_name = doc_obj.get_doc_type_display() if doc_obj else "Documentul"
             msg = f"👍 Am validat {doc_name}.\nMai am nevoie de:\n- " + "\n- ".join(
                 missing
             )
@@ -318,6 +319,12 @@ def check_email_replies_task():
                             case = Case.objects.filter(id__startswith=case_id_prefix).first()
 
                             if case:
+                                # Salvăm Message-ID pentru Reply
+                                msg_id = msg.get("Message-ID")
+                                if msg_id:
+                                    case.last_email_message_id = msg_id
+                                    case.save()
+
                                 # Parsăm body
                                 body = ""
                                 if msg.is_multipart():
@@ -361,12 +368,13 @@ def check_email_replies_task():
                                         ["Accept Oferta", "Schimb Optiunea"] # Max 3 buttons usually.
                                     )
                                 else:
-                                    # Doar informare
-                                    print(f"ℹ️ Mesaj info pentru {case.id}")
-                                    wa.send_text(
-                                        case.client.phone_number,
-                                        f"📩 Mesaj nou de la asigurator:\n\n{body[:500]}..."
+                                    # Forwardăm mesajul către client (Relay)
+                                    print(f"ℹ️ Mesaj info pentru {case.id} -> Forward WhatsApp")
+                                    msg_forward = (
+                                        f"📩 Mesaj nou de la asigurator:\n\n{body[:800]}...\n\n"
+                                        "👉 Răspunde aici (text sau poze) și voi trimite răspunsul tău direct la asigurator."
                                     )
+                                    wa.send_text(case.client.phone_number, msg_forward)
 
             except Exception as e_inner:
                 print(f"Eroare procesare email {num}: {e_inner}")
@@ -396,16 +404,24 @@ def send_offer_acceptance_email_task(case_id):
 
         offer_val = f"{case.settlement_offer_value} RON" if case.settlement_offer_value else "(Conform ofertei transmise)"
 
+        # Detalii Auto
+        victim_vehicle = case.vehicles.filter(role=InvolvedVehicle.Role.VICTIM).first()
+        auto_details = f"Auto: {victim_vehicle.license_plate} (VIN: {victim_vehicle.vin_number})" if victim_vehicle else ""
+
         body = f"""
         Buna ziua,
 
         Ref: Dosar de dauna {case.insurer_claim_number or str(case.id)[:8]}
+        {auto_details}
 
-        Prin prezenta, clientul nostru {case.client.full_name} (CNP: {case.client.cnp}) ACCEPTĂ oferta de despăgubire în valoare de {offer_val}.
+        CERERE DE DESPĂGUBIRE
 
-        Vă rugăm să procedați la plata despăgubirii.{iban_info}
+        Subsemnatul {case.client.full_name}, având CNP {case.client.cnp},
+        prin prezenta ACCEPT oferta de despăgubire în valoare de {offer_val}.
 
-        Așteptăm confirmarea plății / închiderii dosarului.
+        Vă rog să efectuați plata în contul:{iban_info}
+
+        Solicităm închiderea dosarului după efectuarea plății.
 
         Cu stimă,
         Echipa Auto Daune
@@ -459,3 +475,66 @@ def send_option_change_email_task(case_id, new_option_label):
 
     except Exception as e:
         print(f"Eroare email schimbare optiune: {e}")
+
+
+# --- TASK 6: Relay WhatsApp -> Email ---
+@shared_task
+def relay_message_to_insurer_task(case_id, message_text, media_urls=None):
+    try:
+        case = Case.objects.get(id=case_id)
+        if not case.insurer_email:
+            return
+
+        print(f"📧 [RELAY] Trimit reply la asigurator pentru dosar {case.id}")
+
+        subject = f"Re: Avizare Dauna Auto - {case.client.full_name} - Dosar {str(case.id)[:8]}"
+
+        body = f"""
+        Buna ziua,
+
+        Clientul a transmis urmatorul raspuns/documente:
+
+        "{message_text}"
+
+        Cu stima,
+        Echipa Auto Daune
+        """
+
+        headers = {}
+        if case.last_email_message_id:
+            headers["In-Reply-To"] = case.last_email_message_id
+            headers["References"] = case.last_email_message_id
+
+        email = EmailMessage(
+            subject=subject,
+            body=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[case.insurer_email],
+            headers=headers,
+            cc=["office@autodaune.ro"]
+        )
+
+        # Download and attach media if any
+        if media_urls:
+            for url, mime_type in media_urls:
+                try:
+                    r = requests.get(url, timeout=15)
+                    if r.status_code == 200:
+                        fname = url.split("/")[-1]
+                        # Extensii
+                        if "image" in mime_type:
+                             if not fname.endswith((".jpg", ".png", ".jpeg")):
+                                 fname += ".jpg"
+                        elif "pdf" in mime_type:
+                             if not fname.endswith(".pdf"):
+                                 fname += ".pdf"
+
+                        email.attach(fname, r.content, mime_type)
+                except Exception as e:
+                    print(f"⚠️ Eroare download relay {url}: {e}")
+
+        email.send()
+        print(f"✅ Email relay trimis!")
+
+    except Exception as e:
+        print(f"Eroare relay email: {e}")

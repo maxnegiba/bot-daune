@@ -51,9 +51,13 @@ class FlowManager:
 
         # --- ALTE ETAPE ---
         elif stage == Case.Stage.PROCESSING_INSURER:
+            # Relay: Orice trimite userul, trimitem la asigurator
+            from apps.claims.tasks import relay_message_to_insurer_task
+
+            relay_message_to_insurer_task.delay(self.case.id, content, media_urls)
             wa.send_text(
                 self.phone,
-                "Dosarul este în analiză la asigurator. Te vom anunța când primim o ofertă.",
+                "✅ Am transmis mesajul/documentele către asigurator."
             )
         elif stage == Case.Stage.OFFER_DECISION:
              self._handle_offer_decision(content)
@@ -64,14 +68,16 @@ class FlowManager:
 
     def _handle_greeting(self, text):
         text = text.lower()
-        if "dauna" in text or "deschide" in text or "da" in text:
+
+        # Verificăm dacă userul vrea să deschidă dosarul
+        if "da" in text or "deschide" in text:
             # Trecem la pasul următor
             self.case.stage = Case.Stage.COLLECTING_DOCS
             self.case.save()
 
-            # 1. Mesaj Documente
-            msg_docs = (
-                "✅ Am deschis dosarul. Te rog încarcă următoarele documente (poze clare):\n\n"
+            # 1. Mesaj UNIC: Documente + Context
+            msg_full = (
+                "✅ Am deschis dosarul. Te rog să încarci următoarele documente (poze clare):\n\n"
                 "📌 **OBLIGATORIU:**\n"
                 "- Buletinul (CI) persoanei păgubite\n"
                 "- Talonul (Certificat Înmatriculare) auto avariat\n"
@@ -82,11 +88,11 @@ class FlowManager:
                 "- Documente șofer vinovat (RCA, Talon, CI)\n"
                 "- Alte documente relevante\n\n"
                 "Extras Cont Bancar (dacă dorești Regie Proprie)\n\n"
-                "Te rog începe să le încarci acum."
+                "👇 Te rog răspunde ACUM la întrebarea de mai jos, apoi poți începe încărcarea pozelor:"
             )
-            wa.send_text(self.phone, msg_docs)
+            wa.send_text(self.phone, msg_full)
 
-            # 2. Mesaj Rezoluție (Imediat după)
+            # 2. Butoane Rezoluție (Imediat după)
             msg_res = "Cum dorești să soluționezi acest dosar?"
             wa.send_buttons(
                 self.phone,
@@ -102,9 +108,10 @@ class FlowManager:
                 "Am înțeles. Un operator uman a fost notificat și te va contacta în curând.",
             )
         else:
+            # Mesaj Greeting Inițial
             wa.send_buttons(
                 self.phone,
-                "Nu am înțeles. Dorești să deschidem un dosar de daună?",
+                "Salut! Dorești să deschidem un dosar de daună?",
                 ["DA, Deschide Dosar", "NU, Am altă problemă"],
             )
 
@@ -203,21 +210,20 @@ class FlowManager:
 
         if not missing:
             # Avem actele. Avem rezoluția?
-            if self.case.resolution_choice == Case.Resolution.UNDECIDED:
-                 wa.send_buttons(
-                    self.phone,
-                    "Ai încărcat toate documentele obligatorii. Cum dorești să soluționezi?",
-                    ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"]
-                )
-            else:
+            if self.case.resolution_choice != Case.Resolution.UNDECIDED:
                 # TOTUL GATA -> Mandat
                 self.case.stage = Case.Stage.SIGNING_MANDATE
                 self.case.save()
                 self._send_signature_link()
+            else:
+                 wa.send_buttons(
+                    self.phone,
+                    "Ai încărcat toate documentele necesare. Cum dorești să soluționezi?",
+                    ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"]
+                )
         else:
-             # Nu suntem cicălitori dacă a trimis doar o parte, doar informăm
-             # DAR, fiindcă e apelat după fiecare upload, e bine să dăm feedback.
-             msg = "Mai am nevoie de:\n- " + "\n- ".join(missing)
+             # Lipsesc acte. Informăm utilizatorul.
+             msg = "👍 Am primit. Mai am nevoie de:\n- " + "\n- ".join(missing)
              wa.send_text(self.phone, msg)
 
     def _handle_offer_decision(self, text):
