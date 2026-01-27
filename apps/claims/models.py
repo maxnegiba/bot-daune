@@ -101,6 +101,10 @@ class Case(models.Model):
 
     # Rezumat AI (păstrat din vechiul cod)
     ai_summary = models.TextField(blank=True, null=True)
+
+    # Email Threading
+    last_email_message_id = models.CharField(max_length=255, blank=True, null=True, help_text="Message-ID pentru threading email")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
