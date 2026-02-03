@@ -23,12 +23,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-x+&u)bqe^wqo)ass3l16+^j-4o-yedylj-2soq%f_lx4iw7(@d"
+SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-x+&u)bqe^wqo)ass3l16+^j-4o-yedylj-2soq%f_lx4iw7(@d")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
+
+APP_DOMAIN = os.getenv("APP_DOMAIN", "http://127.0.0.1:8000")
 
 
 # Application definition
@@ -81,7 +83,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
+        "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.postgresql"),
         "NAME": os.getenv("DB_NAME"),
         "USER": os.getenv("DB_USER"),
         "PASSWORD": os.getenv("DB_PASSWORD"),
@@ -121,7 +123,6 @@ USE_I18N = True
 
 USE_TZ = True
 
-ALLOWED_HOSTS = ["*"]
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 

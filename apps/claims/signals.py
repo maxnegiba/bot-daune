@@ -76,26 +76,42 @@ def update_or_create_vehicle(
     if not license_plate:
         return
 
-    # 2. Determinăm Vinovăția din verdictul AI-ului
-    # Ex: Verdict = "Vehicul A", role_identifier = "A" => Este vinovat.
-    is_offender = False
-    if is_guilty_verdict and role_identifier in is_guilty_verdict:
-        is_offender = True
+    # 2. Determinăm Vinovăția din verdictul AI-ului (dacă există)
+    new_is_offender = None
+    if is_guilty_verdict:
+         if role_identifier in is_guilty_verdict:
+             new_is_offender = True
+         else:
+             new_is_offender = False
 
-    # 3. Căutăm dacă mașina există deja în dosar (după Nr Auto)
-    # Folosim update_or_create ca să nu duplicăm mașinile la fiecare upload
-    vehicle, created = InvolvedVehicle.objects.update_or_create(
-        case=case,
-        license_plate=license_plate,
-        defaults={
-            "vin_number": vin if vin else "",
-            "driver_name": driver_name if driver_name else "",
-            "is_offender": is_offender,
-            # Aici poți adăuga și alte câmpuri (ex: Marca, Model) dacă le scoatem din OCR
-        },
-    )
+    # 3. Căutăm manual pentru a nu suprascrie datele existente cu valori goale/false
+    vehicle = InvolvedVehicle.objects.filter(case=case, license_plate=license_plate).first()
+    created = False
+
+    if vehicle:
+        # Update parțial
+        if vin:
+            vehicle.vin_number = vin
+        if driver_name:
+            vehicle.driver_name = driver_name
+
+        # Actualizăm vinovăția DOAR dacă avem un verdict nou clar
+        if new_is_offender is not None:
+            vehicle.is_offender = new_is_offender
+
+        vehicle.save()
+    else:
+        # Create
+        vehicle = InvolvedVehicle.objects.create(
+            case=case,
+            license_plate=license_plate,
+            vin_number=vin or "",
+            driver_name=driver_name or "",
+            is_offender=new_is_offender if new_is_offender is not None else False
+        )
+        created = True
 
     action = "Creat" if created else "Actualizat"
     print(
-        f"--- [SIGNAL] {action} Vehicul: {license_plate} (Vinovat: {is_offender}) ---"
+        f"--- [SIGNAL] {action} Vehicul: {license_plate} (Vinovat: {vehicle.is_offender}) ---"
     )

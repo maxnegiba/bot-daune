@@ -10,6 +10,8 @@ from email.header import decode_header
 import re
 import os
 import requests
+import tempfile
+import shutil
 
 
 # --- TASK 1: Procesare Input (Documente & AI) ---
@@ -114,7 +116,7 @@ def check_status_and_notify(case):
                  case.save()
 
                  # Trimitem link semnare
-                 domain = "http://127.0.0.1:8000"
+                 domain = settings.APP_DOMAIN
                  link = f"{domain}/mandat/semneaza/{case.id}/"
                  msg = (
                     "📝 Dosar complet! Mai avem un singur pas: Semnarea Mandatului.\n"
@@ -228,36 +230,54 @@ def send_claim_email_task(case_id):
         # --- PASUL 3: Atașare Documente ---
         docs = CaseDocument.objects.filter(case=case)
         count = 0
-        for doc in docs:
-            if doc.file:
-                try:
-                    # Determinăm tipul (PDF, Imagine, Video)
-                    fname = doc.file.name.lower()
-                    if fname.endswith(".pdf"):
-                        content_type = "application/pdf"
-                    elif fname.endswith(".png"):
-                        content_type = "image/png"
-                    elif fname.endswith(".jpg") or fname.endswith(".jpeg"):
-                         content_type = "image/jpeg"
-                    elif fname.endswith(".mp4"):
-                        content_type = "video/mp4"
-                    elif fname.endswith(".mov"):
-                         content_type = "video/quicktime"
-                    else:
-                        content_type = "application/octet-stream"
 
-                    # Nume fișier lizibil pentru atașament
-                    doc_label = doc.get_doc_type_display().replace(" ", "_")
-                    clean_name = f"{doc_label}_{count}.{fname.split('.')[-1]}"
+        # Creăm un director temporar unic pentru acest task
+        task_tmp_dir = tempfile.mkdtemp()
 
-                    # Citim și atașăm
-                    email.attach(clean_name, doc.file.read(), content_type)
-                    count += 1
-                except Exception as e:
-                    print(f"⚠️ Eroare atașare {doc.file.name}: {e}")
+        try:
+            for doc in docs:
+                if doc.file:
+                    try:
+                        # Determinăm tipul (PDF, Imagine, Video)
+                        fname = doc.file.name.lower()
+                        if fname.endswith(".pdf"):
+                            content_type = "application/pdf"
+                        elif fname.endswith(".png"):
+                            content_type = "image/png"
+                        elif fname.endswith(".jpg") or fname.endswith(".jpeg"):
+                             content_type = "image/jpeg"
+                        elif fname.endswith(".mp4"):
+                            content_type = "video/mp4"
+                        elif fname.endswith(".mov"):
+                             content_type = "video/quicktime"
+                        else:
+                            content_type = "application/octet-stream"
 
-        # --- PASUL 4: Trimitere ---
-        email.send()
+                        # Nume fișier lizibil pentru atașament
+                        doc_label = doc.get_doc_type_display().replace(" ", "_")
+                        clean_name = f"{doc_label}_{count}.{fname.split('.')[-1]}"
+
+                        # Calea unică în directorul temporar
+                        tmp_path = os.path.join(task_tmp_dir, clean_name)
+
+                        # Copiem de la source path la tmp_path
+                        # doc.file.path e calea locală
+                        shutil.copy(doc.file.path, tmp_path)
+
+                        # Atașăm
+                        email.attach_file(tmp_path, content_type)
+
+                        count += 1
+                    except Exception as e:
+                        print(f"⚠️ Eroare atașare {doc.file.name}: {e}")
+
+            # --- PASUL 4: Trimitere ---
+            email.send()
+
+        finally:
+            # Curățăm directorul temporar recursiv
+            if os.path.exists(task_tmp_dir):
+                shutil.rmtree(task_tmp_dir)
 
         # Confirmăm pe consolă
         print(f"🚀 Email trimis cu succes la {target_email}")
@@ -290,8 +310,9 @@ def check_email_replies_task():
         mail.login(IMAP_USER, IMAP_PASS)
         mail.select("inbox")
 
-        # Căutăm mesaje necitite
-        status, messages = mail.search(None, "UNSEEN")
+        # Căutăm mesaje necitite care conțin "Dosar" în subiect
+        # Optimizare: nu procesăm spam-ul sau alte emailuri
+        status, messages = mail.search(None, '(UNSEEN SUBJECT "Dosar")')
         if status != "OK":
             return
 
@@ -515,10 +536,11 @@ def relay_message_to_insurer_task(case_id, message_text, media_urls=None):
         )
 
         # Download and attach media if any
+        temp_files_to_cleanup = []
         if media_urls:
             for url, mime_type in media_urls:
                 try:
-                    r = requests.get(url, timeout=15)
+                    r = requests.get(url, timeout=15, stream=True)
                     if r.status_code == 200:
                         fname = url.split("/")[-1]
                         # Extensii
@@ -529,11 +551,30 @@ def relay_message_to_insurer_task(case_id, message_text, media_urls=None):
                              if not fname.endswith(".pdf"):
                                  fname += ".pdf"
 
-                        email.attach(fname, r.content, mime_type)
+                        # Salvăm în temp file
+                        tmp_fd, tmp_path = tempfile.mkstemp(suffix=f"_{fname}")
+                        os.close(tmp_fd)
+
+                        with open(tmp_path, 'wb') as f:
+                            for chunk in r.iter_content(chunk_size=8192):
+                                if chunk:
+                                    f.write(chunk)
+
+                        email.attach_file(tmp_path, mime_type)
+                        temp_files_to_cleanup.append(tmp_path)
+
                 except Exception as e:
                     print(f"⚠️ Eroare download relay {url}: {e}")
 
-        email.send()
+        try:
+            email.send()
+        finally:
+             for p in temp_files_to_cleanup:
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                except:
+                    pass
         print(f"✅ Email relay trimis!")
 
     except Exception as e:
