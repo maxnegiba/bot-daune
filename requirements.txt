@@ -1,0 +1,8 @@
+django==6.0.1
+requests
+celery
+redis
+openai
+twilio
+python-dotenv
+psycopg2-binary

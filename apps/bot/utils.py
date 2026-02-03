@@ -14,6 +14,10 @@ class WhatsAppClient:
 
     def send_text(self, to_number, text):
         """Trimite un mesaj text simplu"""
+        # Asigură prefixul whatsapp:
+        if not to_number.startswith("whatsapp:"):
+            to_number = f"whatsapp:{to_number}"
+
         try:
             message = self.client.messages.create(
                 from_=self.from_number, to=to_number, body=text

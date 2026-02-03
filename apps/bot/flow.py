@@ -1,6 +1,7 @@
 import os
 import requests
-from django.core.files.base import ContentFile
+import tempfile
+from django.core.files import File
 from django.conf import settings
 from apps.claims.models import Case, CaseDocument
 from apps.claims.tasks import analyze_document_task
@@ -120,7 +121,7 @@ class FlowManager:
         for url, mime_type in media_urls:
             try:
                 headers = {"User-Agent": "Mozilla/5.0"}
-                r = requests.get(url, headers=headers, timeout=15)
+                r = requests.get(url, headers=headers, timeout=15, stream=True)
                 if r.status_code == 200:
                     ext = mime_type.split("/")[-1]
                     # Detect video simplificat
@@ -142,7 +143,17 @@ class FlowManager:
                         doc_type=doc_type,
                         ocr_data={},
                     )
-                    doc.file.save(file_name, ContentFile(r.content))
+
+                    # Stream download to temp file
+                    with tempfile.NamedTemporaryFile() as tmp:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            if chunk:
+                                tmp.write(chunk)
+                        tmp.flush()
+                        tmp.seek(0)
+
+                        # Save to model
+                        doc.file.save(file_name, File(tmp))
 
                     if is_video:
                         self.case.has_scene_video = True
@@ -302,7 +313,7 @@ class FlowManager:
             )
 
     def _send_signature_link(self):
-        domain = "http://127.0.0.1:8000"
+        domain = settings.APP_DOMAIN
         link = f"{domain}/mandat/semneaza/{self.case.id}/"
         msg = (
             "📝 Dosar complet! Mai avem un singur pas: Semnarea Mandatului.\n"
