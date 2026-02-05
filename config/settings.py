@@ -36,6 +36,8 @@ APP_DOMAIN = os.getenv("APP_DOMAIN", "http://127.0.0.1:8000")
 # Application definition
 
 INSTALLED_APPS = [
+    "unfold",  # The modern admin theme
+    "unfold.contrib.filters",  # Optional: Adds filter functionalities
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -147,3 +149,90 @@ CELERY_TIMEZONE = "UTC"
 TWILIO_ACCOUNT_SID = "AC_PLACEHOLDER"
 TWILIO_AUTH_TOKEN = "AUTH_PLACEHOLDER"
 TWILIO_WHATSAPP_NUMBER = "whatsapp:+14155238886"  # Twilio Sandbox Number
+
+# Unfold Admin Configuration
+UNFOLD = {
+    "SITE_TITLE": "Auto Claims Admin",
+    "SITE_HEADER": "Auto Claims Dashboard",
+    "SITE_URL": "/",
+    # "SITE_ICON": {
+    #     "light": lambda request: static("icon.svg"),  # light mode
+    #     "dark": lambda request: static("icon-dark.svg"),  # dark mode
+    # },
+    "DASHBOARD_CALLBACK": "apps.claims.dashboard.dashboard_callback",
+    "SIDEBAR": {
+        "show_search": True,  # Search in applications and models names
+        "show_all_applications": False,  # Dropdown with all applications and models
+        "navigation": [
+            {
+                "title": "Principal",
+                "separator": True,  # Top border
+                "items": [
+                    {
+                        "title": "Dashboard",
+                        "icon": "dashboard",  # Supported icon set: https://fonts.google.com/icons
+                        "link": "admin:index",
+                    },
+                ],
+            },
+            {
+                "title": "Dosare & Clienți",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Toate Dosarele",
+                        "icon": "folder",
+                        "link": "admin:claims_case_changelist",
+                    },
+                    {
+                        "title": "Clienți",
+                        "icon": "people",
+                        "link": "admin:claims_client_changelist",
+                    },
+                    {
+                        "title": "Documente la Dosar",
+                        "icon": "description",
+                        "link": "admin:claims_casedocument_changelist",
+                    },
+                ],
+            },
+            {
+                "title": "Configurare",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Asiguratori",
+                        "icon": "business",
+                        "link": "admin:claims_insurer_changelist",
+                    },
+                    {
+                        "title": "Vehicule Implicate",
+                        "icon": "directions_car",
+                        "link": "admin:claims_involvedvehicle_changelist",
+                    },
+                    {
+                        "title": "Jurnal Conversații (Logs)",
+                        "icon": "chat",
+                        "link": "admin:claims_communicationlog_changelist",
+                    },
+                ],
+            },
+            {
+                "title": "Utilizatori",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Utilizatori",
+                        "icon": "person",
+                        "link": "admin:auth_user_changelist",
+                    },
+                    {
+                        "title": "Grupuri",
+                        "icon": "group",
+                        "link": "admin:auth_group_changelist",
+                    },
+                ],
+            },
+        ],
+    },
+}

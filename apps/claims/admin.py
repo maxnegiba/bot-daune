@@ -1,6 +1,9 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
+from unfold.admin import ModelAdmin, TabularInline
+from unfold.decorators import display
+
 from .models import (
     Client,
     Case,
@@ -12,19 +15,19 @@ from .models import (
 
 
 @admin.register(Client)
-class ClientAdmin(admin.ModelAdmin):
+class ClientAdmin(ModelAdmin):
     list_display = ("phone_number", "full_name", "cnp", "created_at")
     search_fields = ("phone_number", "full_name", "cnp")
 
 
-class InvolvedVehicleInline(admin.TabularInline):
+class InvolvedVehicleInline(TabularInline):
     model = InvolvedVehicle
     extra = 0
     verbose_name = "Vehicul Implicat"
     verbose_name_plural = "Vehicule Implicate"
 
 
-class CaseDocumentInline(admin.TabularInline):
+class CaseDocumentInline(TabularInline):
     model = CaseDocument
     extra = 0
     readonly_fields = ("ocr_data", "uploaded_at")
@@ -32,7 +35,7 @@ class CaseDocumentInline(admin.TabularInline):
     verbose_name_plural = "Documente la Dosar"
 
 
-class CommunicationLogInline(admin.TabularInline):
+class CommunicationLogInline(TabularInline):
     model = CommunicationLog
     extra = 0
     readonly_fields = ("direction", "channel", "message_type", "content", "created_at")
@@ -45,17 +48,18 @@ class CommunicationLogInline(admin.TabularInline):
 
 
 @admin.register(Case)
-class CaseAdmin(admin.ModelAdmin):
+class CaseAdmin(ModelAdmin):
     list_display = (
         "id_short",
         "client_link",
-        "stage_colored",  # Stadiul colorat
-        "human_status",  # Iconiță Robot/Om
+        "get_stage_badge",  # Stadiul cu badge Unfold
+        "get_human_status_badge",  # Iconiță Robot/Om cu badge Unfold
         "resolution_choice",
         "created_at",
     )
 
     list_filter = ("is_human_managed", "stage", "resolution_choice")
+    list_filter_submit = True  # Buton de filtrare dedicat
     search_fields = ("client__phone_number", "client__full_name", "id")
 
     # Adăugăm Inline-ul de Loguri pentru a vedea chat-ul direct în dosar
@@ -70,6 +74,7 @@ class CaseAdmin(admin.ModelAdmin):
         (
             "Checklist Documente (AI)",
             {
+                "classes": ["collapse"],
                 "fields": (
                     "has_id_card",
                     "has_car_coupon",
@@ -123,39 +128,34 @@ class CaseAdmin(admin.ModelAdmin):
 
     client_link.short_description = "Client"
 
-    def stage_colored(self, obj):
-        # Colorăm stadiul pentru vizibilitate
-        color = "black"
-        if obj.stage == Case.Stage.CLOSED:
-            color = "green"
-        elif obj.stage == Case.Stage.COLLECTING_DOCS:
-            color = "orange"
-        elif obj.stage == Case.Stage.PROCESSING_INSURER:
-            color = "blue"
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}</span>',
-            color,
-            obj.get_stage_display(),
-        )
+    @display(description="Stadiu", label=True)
+    def get_stage_badge(self, obj):
+        return obj.get_stage_display(), self._get_stage_color(obj.stage)
 
-    stage_colored.short_description = "Stadiu"
+    def _get_stage_color(self, stage):
+        if stage == Case.Stage.CLOSED:
+            return "success"
+        elif stage == Case.Stage.COLLECTING_DOCS:
+            return "warning"
+        elif stage == Case.Stage.PROCESSING_INSURER:
+            return "info"
+        return "default"
 
-    def human_status(self, obj):
+    @display(description="Mod Operare", label=True)
+    def get_human_status_badge(self, obj):
         if obj.is_human_managed:
-            return mark_safe('<span style="color: red;">🛑 UMAN</span>')
-        return mark_safe('<span style="color: green;">🤖 BOT</span>')
-
-    human_status.short_description = "Mod Operare"
+            return "UMAN", "danger"
+        return "BOT", "success"
 
 
 @admin.register(CommunicationLog)
-class CommunicationLogAdmin(admin.ModelAdmin):
+class CommunicationLogAdmin(ModelAdmin):
     list_display = ("case", "direction", "channel", "created_at")
     list_filter = ("direction", "channel")
 
 
 @admin.register(Insurer)
-class InsurerAdmin(admin.ModelAdmin):
+class InsurerAdmin(ModelAdmin):
     list_display = ("name", "email_claims", "identifiers")
     search_fields = ("name", "identifiers", "email_claims")
     fieldsets = (
