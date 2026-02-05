@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 import os
 from dotenv import load_dotenv  # <--- Asta e crucială
+from django.urls import reverse_lazy
 
 load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -171,7 +172,7 @@ UNFOLD = {
                     {
                         "title": "Dashboard",
                         "icon": "dashboard",  # Supported icon set: https://fonts.google.com/icons
-                        "link": "admin:index",
+                        "link": reverse_lazy("admin:index"),
                     },
                 ],
             },
@@ -182,17 +183,17 @@ UNFOLD = {
                     {
                         "title": "Toate Dosarele",
                         "icon": "folder",
-                        "link": "admin:claims_case_changelist",
+                        "link": reverse_lazy("admin:claims_case_changelist"),
                     },
                     {
                         "title": "Clienți",
                         "icon": "people",
-                        "link": "admin:claims_client_changelist",
+                        "link": reverse_lazy("admin:claims_client_changelist"),
                     },
                     {
                         "title": "Documente la Dosar",
                         "icon": "description",
-                        "link": "admin:claims_casedocument_changelist",
+                        "link": reverse_lazy("admin:claims_casedocument_changelist"),
                     },
                 ],
             },
@@ -203,17 +204,17 @@ UNFOLD = {
                     {
                         "title": "Asiguratori",
                         "icon": "business",
-                        "link": "admin:claims_insurer_changelist",
+                        "link": reverse_lazy("admin:claims_insurer_changelist"),
                     },
                     {
                         "title": "Vehicule Implicate",
                         "icon": "directions_car",
-                        "link": "admin:claims_involvedvehicle_changelist",
+                        "link": reverse_lazy("admin:claims_involvedvehicle_changelist"),
                     },
                     {
                         "title": "Jurnal Conversații (Logs)",
                         "icon": "chat",
-                        "link": "admin:claims_communicationlog_changelist",
+                        "link": reverse_lazy("admin:claims_communicationlog_changelist"),
                     },
                 ],
             },
@@ -224,12 +225,12 @@ UNFOLD = {
                     {
                         "title": "Utilizatori",
                         "icon": "person",
-                        "link": "admin:auth_user_changelist",
+                        "link": reverse_lazy("admin:auth_user_changelist"),
                     },
                     {
                         "title": "Grupuri",
                         "icon": "group",
-                        "link": "admin:auth_group_changelist",
+                        "link": reverse_lazy("admin:auth_group_changelist"),
                     },
                 ],
             },
