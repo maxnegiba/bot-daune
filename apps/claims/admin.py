@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from .models import (
     Client,
     Case,
@@ -141,8 +142,8 @@ class CaseAdmin(admin.ModelAdmin):
 
     def human_status(self, obj):
         if obj.is_human_managed:
-            return format_html('<span style="color: red;">🛑 UMAN</span>')
-        return format_html('<span style="color: green;">🤖 BOT</span>')
+            return mark_safe('<span style="color: red;">🛑 UMAN</span>')
+        return mark_safe('<span style="color: green;">🤖 BOT</span>')
 
     human_status.short_description = "Mod Operare"
 
