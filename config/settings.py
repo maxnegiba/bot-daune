@@ -190,11 +190,6 @@ UNFOLD = {
                         "icon": "people",
                         "link": reverse_lazy("admin:claims_client_changelist"),
                     },
-                    {
-                        "title": "Documente la Dosar",
-                        "icon": "description",
-                        "link": reverse_lazy("admin:claims_casedocument_changelist"),
-                    },
                 ],
             },
             {
@@ -205,11 +200,6 @@ UNFOLD = {
                         "title": "Asiguratori",
                         "icon": "business",
                         "link": reverse_lazy("admin:claims_insurer_changelist"),
-                    },
-                    {
-                        "title": "Vehicule Implicate",
-                        "icon": "directions_car",
-                        "link": reverse_lazy("admin:claims_involvedvehicle_changelist"),
                     },
                     {
                         "title": "Jurnal Conversații (Logs)",
