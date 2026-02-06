@@ -7,3 +7,7 @@ twilio
 python-dotenv
 psycopg2-binary
 django-unfold
+gunicorn
+whitenoise
+reportlab
+weasyprint

@@ -1,6 +1,8 @@
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from django.conf import settings
+from twilio.request_validator import RequestValidator
 from apps.claims.models import Client, Case, CommunicationLog
 from .flow import FlowManager
 from .utils import WhatsAppClient
@@ -12,7 +14,20 @@ def whatsapp_webhook(request):
     """
     Webhook principal pentru WhatsApp (Twilio).
     Gestionează intrarea și deleagă logica către FlowManager.
+    Include validare de securitate a semnăturii Twilio în producție.
     """
+    # 0. Validare Securitate (Doar în producție)
+    if not settings.DEBUG:
+        auth_token = settings.TWILIO_AUTH_TOKEN
+        if auth_token:
+            validator = RequestValidator(auth_token)
+            signature = request.META.get("HTTP_X_TWILIO_SIGNATURE", "")
+            url = request.build_absolute_uri()
+            post_vars = request.POST.dict()
+
+            if not validator.validate(url, post_vars, signature):
+                return HttpResponseForbidden("Invalid Twilio Signature")
+
     data = request.POST
     sender = data.get("From", "")
     msg_body = data.get("Body", "").strip()
