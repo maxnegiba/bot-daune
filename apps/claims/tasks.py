@@ -299,8 +299,9 @@ def check_email_replies_task():
     """
     # Folosim IMAP_HOST dacă e definit (pentru separare de SMTP), altfel fallback la EMAIL_HOST
     IMAP_HOST = os.getenv("IMAP_HOST", os.getenv("EMAIL_HOST", "imap.gmail.com"))
-    IMAP_USER = os.getenv("EMAIL_HOST_USER")
-    IMAP_PASS = os.getenv("EMAIL_HOST_PASSWORD")
+    # Preferăm variabile dedicate pentru IMAP, altfel fallback la cele de email general
+    IMAP_USER = os.getenv("IMAP_USER", os.getenv("EMAIL_HOST_USER"))
+    IMAP_PASS = os.getenv("IMAP_PASSWORD", os.getenv("EMAIL_HOST_PASSWORD"))
 
     if not IMAP_USER or not IMAP_PASS:
         print("❌ Lipsă credențiale IMAP")
