@@ -1,0 +1,17 @@
+[Unit]
+Description=gunicorn daemon for Auto Claims Bot
+After=network.target
+
+[Service]
+User=root
+Group=www-data
+WorkingDirectory=/var/www/autodaune
+ExecStart=/var/www/autodaune/venv/bin/gunicorn \
+          --access-logfile - \
+          --workers 3 \
+          --bind unix:/run/gunicorn.sock \
+          config.wsgi:application
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
