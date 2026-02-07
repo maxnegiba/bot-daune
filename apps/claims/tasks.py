@@ -3,7 +3,7 @@ from django.core.mail import EmailMessage
 from django.conf import settings
 from .models import Case, CaseDocument, Insurer, InvolvedVehicle
 from .services import DocumentAnalyzer
-from apps.bot.utils import WhatsAppClient
+from apps.bot.utils import WhatsAppClient, WebChatClient
 import imaplib
 import email
 from email.header import decode_header
@@ -79,16 +79,25 @@ def analyze_document_task(document_id):
         print(f"--- [AI ERROR] {e} ---")
 
 
+def get_client(case):
+    # Detectare canal preferat bazat pe ultimul mesaj primit
+    last_log = case.logs.filter(direction="IN").order_by("-created_at").first()
+    if last_log and last_log.channel == "WEB":
+        return WebChatClient()
+    return WhatsAppClient()
+
+
 def check_status_and_notify(case):
     """
-    Verifică ce documente lipsesc și notifică clientul pe WhatsApp.
+    Verifică ce documente lipsesc și notifică clientul pe WhatsApp/Web.
     """
     # Dacă dosarul este pe mod manual (ex: Service RAR), nu trimitem notificări automate
     if case.is_human_managed:
         return
 
-    wa = WhatsAppClient()
-    phone = case.client.phone_number
+    client = get_client(case)
+    # Pentru WebChatClient, phone_number nu e folosit daca pasam case, dar il pastram pentru WhatsAppClient
+    recipient = case  # Folosim obiectul Case pentru a suporta ambele canale
 
     # Lista de verificare
     missing = []
@@ -122,11 +131,11 @@ def check_status_and_notify(case):
                     "📝 Dosar complet! Mai avem un singur pas: Semnarea Mandatului.\n"
                     f"Te rog intră aici și semnează:\n{link}"
                  )
-                 wa.send_text(phone, msg)
+                 client.send_text(recipient, msg)
             else:
                 # Nu avem rezoluția, întrebăm din nou. Nu schimbăm stadiul încă.
-                wa.send_buttons(
-                    phone,
+                client.send_buttons(
+                    recipient,
                     "✅ Am primit toate documentele necesare! Cum dorești să soluționezi dosarul?",
                     ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"],
                 )
@@ -137,7 +146,7 @@ def check_status_and_notify(case):
             msg = f"👍 Am validat {doc_name}.\nMai am nevoie de:\n- " + "\n- ".join(
                 missing
             )
-            wa.send_text(phone, msg)
+            client.send_text(recipient, msg)
 
 
 # --- TASK 2: Procesare Output (Trimitere Email Asigurator) ---
@@ -367,7 +376,8 @@ def check_email_replies_task():
                                 keywords_offer = ["oferta", "propunere", "despagubire", "suma de", "acceptul"]
                                 is_offer = any(k in body_lower for k in keywords_offer)
 
-                                wa = WhatsAppClient()
+                                client = get_client(case)
+                                recipient = case
 
                                 if is_offer:
                                     print(f"💰 OFERTA DETECTATA pentru {case.id}")
@@ -385,8 +395,8 @@ def check_email_replies_task():
 
                                     case.save()
 
-                                    wa.send_buttons(
-                                        case.client.phone_number,
+                                    client.send_buttons(
+                                        recipient,
                                         f"📢 Am primit o OFERTĂ de la asigurator!\n\nDin textul emailului: {body[:300]}...\n\nCe dorești să faci?",
                                         ["Accept Oferta", "Schimb Optiunea"] # Max 3 buttons usually.
                                     )
@@ -397,7 +407,7 @@ def check_email_replies_task():
                                         f"📩 Mesaj nou de la asigurator:\n\n{body[:800]}...\n\n"
                                         "👉 Răspunde aici (text sau poze) și voi trimite răspunsul tău direct la asigurator."
                                     )
-                                    wa.send_text(case.client.phone_number, msg_forward)
+                                    client.send_text(recipient, msg_forward)
 
             except Exception as e_inner:
                 print(f"Eroare procesare email {num}: {e_inner}")
