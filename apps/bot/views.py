@@ -144,6 +144,10 @@ def chat_history(request):
     if not case_id:
         return JsonResponse({"error": "Unauthorized"}, status=401)
 
+    if not Case.objects.filter(id=case_id).exists():
+        request.session.flush()
+        return JsonResponse({"error": "Case invalid"}, status=401)
+
     logs = CommunicationLog.objects.filter(case_id=case_id).order_by("created_at")
     history = []
     for log in logs:
@@ -175,7 +179,8 @@ def chat_send(request):
     try:
         case = Case.objects.get(id=case_id)
     except Case.DoesNotExist:
-        return JsonResponse({"error": "Case not found"}, status=404)
+        request.session.flush()
+        return JsonResponse({"error": "Case invalid"}, status=401)
 
     # Procesare mesaj text (Sanitizare)
     message = request.POST.get("message", "")
@@ -235,6 +240,10 @@ def chat_poll(request):
 
     if not case_id:
         return JsonResponse({"error": "Unauthorized"}, status=401)
+
+    if not Case.objects.filter(id=case_id).exists():
+        request.session.flush()
+        return JsonResponse({"error": "Case invalid"}, status=401)
 
     logs = CommunicationLog.objects.filter(case_id=case_id, id__gt=last_id).order_by("created_at")
     new_messages = []
