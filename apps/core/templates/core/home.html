@@ -90,7 +90,7 @@
 
         <footer>
             <input type="file" id="file-input" multiple style="display: none;" onchange="handleFileSelect()" />
-            <button id="file-btn" onclick="document.getElementById('file-input').click()" title="Atașează fișiere">📎</button>
+            <button id="file-btn" onclick="document.getElementById('file-input').click()" title="Atașează fișiere (Max 100MB)">📎</button>
 
             <input type="text" id="msg-input" placeholder="Scrie un mesaj..." onkeypress="handleEnter(event)" autocomplete="off" />
 
@@ -100,31 +100,81 @@
 </div>
 
 <script>
-    let caseId = null;
-    let clientId = null;
     let lastMsgId = 0;
     let pollingInterval = null;
 
+    // --- CSRF TOKEN HELPER ---
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                // Does this cookie string begin with the name we want?
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
     // --- INITIALIZATION ---
     window.onload = function() {
-        const storedCase = localStorage.getItem('case_id');
         const storedPhone = localStorage.getItem('phone');
-
-        if (storedCase && storedPhone) {
+        if (storedPhone) {
              document.getElementById('phone').value = storedPhone;
-             // Auto-login attempt
-             login(true);
+        }
+
+        // Verificăm dacă sesiunea e activă (fără case_id local)
+        checkSession();
+    }
+
+    async function checkSession() {
+        try {
+            // Încercăm să luăm istoricul. Dacă returnează 200, suntem logați.
+            // Dacă 401, nu suntem.
+            const res = await fetch('/bot/chat/history/', {
+                headers: { 'X-CSRFToken': getCookie('csrftoken') }
+            });
+
+            if (res.status === 200) {
+                const data = await res.json();
+                showChatScreen();
+                renderHistory(data.messages);
+                startPolling();
+            } else if (res.status === 401 || res.status === 403) {
+                // Sesiune expirată sau inexistentă -> arată Login
+                showLoginScreen();
+            } else {
+                console.error("Unknown error checking session");
+                showLoginScreen();
+            }
+        } catch (e) {
+            console.error("Connection error:", e);
+            showLoginScreen();
         }
     }
 
+    function showLoginScreen() {
+        document.getElementById('login-screen').style.display = 'flex';
+        document.getElementById('chat-screen').style.display = 'none';
+    }
+
+    function showChatScreen() {
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('chat-screen').style.display = 'flex';
+    }
+
     // --- AUTH ---
-    async function login(isAuto = false) {
+    async function login() {
         const phone = document.getElementById('phone').value.trim();
         const name = document.getElementById('name').value.trim();
         const errElem = document.getElementById('login-error');
 
         if (!phone) {
-            if(!isAuto) errElem.innerText = "Te rugăm să introduci numărul de telefon.";
+            errElem.innerText = "Te rugăm să introduci numărul de telefon.";
             return;
         }
 
@@ -135,25 +185,25 @@
         try {
             const res = await fetch('/bot/chat/login/', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
                 body: JSON.stringify({phone, name})
             });
             const data = await res.json();
 
-            if (data.success) {
-                caseId = data.case_id;
-                clientId = data.client_id;
-
-                localStorage.setItem('case_id', caseId);
+            if (res.ok && data.success) {
                 localStorage.setItem('phone', phone);
-
-                document.getElementById('login-screen').style.display = 'none';
-                document.getElementById('chat-screen').style.display = 'flex';
-
-                loadHistory();
+                showChatScreen();
+                loadHistory(); // Re-fetch clean history
                 startPolling();
             } else {
-                errElem.innerText = data.error || "Eroare la autentificare";
+                if (res.status === 429) {
+                     errElem.innerText = "Prea multe încercări. Așteptați un minut.";
+                } else {
+                     errElem.innerText = data.error || "Eroare la autentificare";
+                }
             }
         } catch (e) {
             errElem.innerText = "Eroare de conexiune. Verifică internetul.";
@@ -165,42 +215,60 @@
     }
 
     function logout() {
-        localStorage.removeItem('case_id');
-        localStorage.removeItem('phone');
+        // Opțional: Putem face un call la backend pentru logout
+        // Deocamdată doar reîncărcăm pagina, backend-ul va păstra sesiunea.
+        // Dacă userul vrea să iasă explicit, ar trebui să ștergem sesiunea.
+        // Pentru simplitate, doar reload page.
         location.reload();
     }
 
     // --- MESSAGING ---
     async function loadHistory() {
         try {
-            const res = await fetch(`/bot/chat/history/?case_id=${caseId}`);
-            const data = await res.json();
-            const msgs = document.getElementById('messages');
-            msgs.innerHTML = '';
-            lastMsgId = 0;
+            const res = await fetch(`/bot/chat/history/`, {
+                headers: { 'X-CSRFToken': getCookie('csrftoken') }
+            });
+            if (res.status === 401) { logout(); return; }
 
-            if (data.messages) {
-                data.messages.forEach(msg => {
-                    appendMessage(msg);
-                    if (msg.id > lastMsgId) lastMsgId = msg.id;
-                });
-                setTimeout(scrollToBottom, 100);
-            }
+            const data = await res.json();
+            renderHistory(data.messages);
         } catch (e) {
             console.error("History error:", e);
+        }
+    }
+
+    function renderHistory(messages) {
+        const msgs = document.getElementById('messages');
+        msgs.innerHTML = '';
+        lastMsgId = 0;
+
+        if (messages) {
+            messages.forEach(msg => {
+                appendMessage(msg);
+                if (msg.id > lastMsgId) lastMsgId = msg.id;
+            });
+            setTimeout(scrollToBottom, 100);
         }
     }
 
     function startPolling() {
         if (pollingInterval) clearInterval(pollingInterval);
         pollingInterval = setInterval(async () => {
-            if (!caseId) return;
             try {
-                const res = await fetch(`/bot/chat/poll/?case_id=${caseId}&last_id=${lastMsgId}`);
+                const res = await fetch(`/bot/chat/poll/?last_id=${lastMsgId}`, {
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') }
+                });
+
+                if (res.status === 401) {
+                    clearInterval(pollingInterval);
+                    logout();
+                    return;
+                }
+                if (res.status === 429) return; // Rate limited, skip this poll
+
                 const data = await res.json();
                 if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(msg => {
-                        // Prevent duplicates strictly
                         if (msg.id > lastMsgId) {
                             appendMessage(msg);
                             lastMsgId = msg.id;
@@ -211,34 +279,33 @@
             } catch (e) {
                 console.error("Polling error:", e);
             }
-        }, 3000); // Poll every 3 seconds
+        }, 3000);
     }
 
     function appendMessage(msg) {
         const msgs = document.getElementById('messages');
         const row = document.createElement('div');
 
-        // Determine direction
-        // msg.direction: 'IN' (User) or 'OUT' (Bot)
         const isUser = msg.direction === 'IN';
         row.className = `message-row ${isUser ? 'in' : 'out'}`;
 
-        // Bubble
         const bubble = document.createElement('div');
         bubble.className = 'message-bubble';
 
-        // Format content (basic link detection and newlines)
+        // Content Sanitization handled by browser mostly if using innerText,
+        // but we want basic HTML formatting (links, newlines).
+        // Backend handles storage sanitization.
         let content = msg.content || "";
-        content = content.replace(/</g, "&lt;").replace(/>/g, "&gt;"); // XSS protect
+        // Basic escaping just in case
+        content = content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
         content = content.replace(/\n/g, '<br>');
-        // Linkify
+
         const urlRegex = /(https?:\/\/[^\s]+)/g;
         content = content.replace(urlRegex, '<a href="$1" target="_blank" style="color: inherit; text-decoration: underline;">$1</a>');
 
         bubble.innerHTML = content;
         row.appendChild(bubble);
 
-        // Timestamp
         const ts = document.createElement('div');
         ts.className = 'timestamp';
         try {
@@ -247,7 +314,6 @@
         } catch(e) { ts.innerText = ""; }
         row.appendChild(ts);
 
-        // Buttons (Interactive) - Only for Bot messages
         if (!isUser && msg.metadata && msg.metadata.buttons) {
              const btnContainer = document.createElement('div');
              btnContainer.className = 'buttons-container';
@@ -258,8 +324,6 @@
                  btn.onclick = () => sendMessage(btnText);
                  btnContainer.appendChild(btn);
              });
-             // Append buttons to the ROW, inside or outside bubble?
-             // Outside looks better usually.
              row.appendChild(btnContainer);
         }
 
@@ -281,25 +345,25 @@
 
         if (!val) return;
 
-        input.value = ''; // Clear input immediately
+        input.value = '';
         input.focus();
 
-        // Optimistic append?
-        // No, let polling handle it to ensure order and confirmation.
-        // But we might want to show a "sending..." state?
-        // For simplicity, just wait for poll.
-
-        // Construct FormData
         const formData = new FormData();
-        formData.append('case_id', caseId);
         formData.append('message', val);
 
         try {
-            await fetch('/bot/chat/send/', {
+            const res = await fetch('/bot/chat/send/', {
                 method: 'POST',
+                headers: { 'X-CSRFToken': getCookie('csrftoken') },
                 body: formData
             });
-            // Don't manually append. Poll will catch it.
+
+            if (res.status === 401) { logout(); return; }
+            if (res.status === 429) { alert("Prea multe mesaje. Așteptați puțin."); return; }
+            if (!res.ok) {
+                 const data = await res.json();
+                 alert("Eroare: " + (data.error || "Necunoscută"));
+            }
         } catch (e) {
             alert("Eroare trimitere: " + e.message);
         }
@@ -309,15 +373,11 @@
         const input = document.getElementById('file-input');
         if (input.files.length > 0) {
             const formData = new FormData();
-            formData.append('case_id', caseId);
 
-            // Append files
             for (let i = 0; i < input.files.length; i++) {
-                // Name 'file_0', 'file_1' etc doesn't matter much as backend iterates all FILES
                 formData.append('file_' + i, input.files[i]);
             }
 
-            // UI Feedback
             const msgs = document.getElementById('messages');
             const loading = document.createElement('div');
             loading.className = 'loading-indicator';
@@ -326,15 +386,26 @@
             scrollToBottom();
 
             try {
-                await fetch('/bot/chat/send/', {
+                const res = await fetch('/bot/chat/send/', {
                     method: 'POST',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') },
                     body: formData
                 });
+
                 loading.remove();
-                // Reset input
+
+                if (res.status === 401) { logout(); return; }
+                if (res.status === 413) { alert("Fișier prea mare!"); return; } // Nginx usually 413
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    alert("Eroare upload: " + (data.error || "Necunoscută"));
+                }
+
                 input.value = '';
             } catch (e) {
-                loading.innerText = 'Eroare upload.';
+                loading.remove();
+                alert('Eroare upload.');
                 console.error(e);
             }
         }
