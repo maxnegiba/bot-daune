@@ -122,6 +122,8 @@ class FlowManager:
 
     def _handle_image_upload(self, media_urls):
         saved_count = 0
+        has_async_processing = False
+
         for url, mime_type in media_urls:
             try:
                 # Dacă e URL local (uploadat via Web), nu avem nevoie de requests.get neapărat
@@ -173,6 +175,7 @@ class FlowManager:
                     else:
                         # Trimitem la AI doar imaginile/pdf
                         analyze_document_task.delay(doc.id)
+                        has_async_processing = True
 
                     saved_count += 1
             except Exception as e:
@@ -180,8 +183,9 @@ class FlowManager:
 
         if saved_count > 0:
             self.client.send_text(self.case, f"Am primit {saved_count} fișier(e). Analizez...")
-            # Verificăm statusul imediat (pt Video)
-            self._check_documents_status()
+            # Verificăm statusul imediat DOAR daca nu avem procesare asincrona (ex: doar video)
+            if not has_async_processing:
+                self._check_documents_status()
 
     def _try_handle_resolution_text(self, text):
         text = text.lower()
