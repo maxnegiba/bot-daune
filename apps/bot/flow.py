@@ -5,15 +5,19 @@ from django.core.files import File
 from django.conf import settings
 from apps.claims.models import Case, CaseDocument
 from apps.claims.tasks import analyze_document_task
-from .utils import WhatsAppClient
-
-wa = WhatsAppClient()
+from .utils import WhatsAppClient, WebChatClient
 
 
 class FlowManager:
-    def __init__(self, case, sender_phone):
+    def __init__(self, case, sender_phone, channel="WHATSAPP"):
         self.case = case
         self.phone = sender_phone
+        self.channel = channel
+
+        if channel == "WEB":
+            self.client = WebChatClient()
+        else:
+            self.client = WhatsAppClient()
 
     def process_message(self, message_type, content, media_urls=None):
         """
@@ -56,8 +60,8 @@ class FlowManager:
             from apps.claims.tasks import relay_message_to_insurer_task
 
             relay_message_to_insurer_task.delay(self.case.id, content, media_urls)
-            wa.send_text(
-                self.phone,
+            self.client.send_text(
+                self.case,
                 "✅ Am transmis mesajul/documentele către asigurator."
             )
         elif stage == Case.Stage.OFFER_DECISION:
@@ -91,12 +95,12 @@ class FlowManager:
                 "Extras Cont Bancar (dacă dorești Regie Proprie)\n\n"
                 "👇 Te rog răspunde ACUM la întrebarea de mai jos, apoi poți începe încărcarea pozelor:"
             )
-            wa.send_text(self.phone, msg_full)
+            self.client.send_text(self.case, msg_full)
 
             # 2. Butoane Rezoluție (Imediat după)
             msg_res = "Cum dorești să soluționezi acest dosar?"
-            wa.send_buttons(
-                self.phone,
+            self.client.send_buttons(
+                self.case,
                 msg_res,
                 ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"]
             )
@@ -104,14 +108,14 @@ class FlowManager:
         elif "alta" in text or "nu" in text:
             self.case.is_human_managed = True
             self.case.save()
-            wa.send_text(
-                self.phone,
+            self.client.send_text(
+                self.case,
                 "Am înțeles. Un operator uman a fost notificat și te va contacta în curând.",
             )
         else:
             # Mesaj Greeting Inițial
-            wa.send_buttons(
-                self.phone,
+            self.client.send_buttons(
+                self.case,
                 "Salut! Dorești să deschidem un dosar de daună?",
                 ["DA, Deschide Dosar", "NU, Am altă problemă"],
             )
@@ -120,6 +124,13 @@ class FlowManager:
         saved_count = 0
         for url, mime_type in media_urls:
             try:
+                # Dacă e URL local (uploadat via Web), nu avem nevoie de requests.get neapărat
+                # Dar pentru uniformitate, dacă vine ca URL, îl tratăm la fel.
+                # Totuși, Web Chat va trimite probabil fișierele direct la endpoint,
+                # iar endpoint-ul va salva fișierele și va pasa doar calea sau obiectul.
+                # DAR, FlowManager e construit pe ideea de `media_urls`.
+                # Pentru Web Chat API, voi face upload-ul în view și voi genera un URL local temporar sau persistent.
+
                 headers = {"User-Agent": "Mozilla/5.0"}
                 r = requests.get(url, headers=headers, timeout=15, stream=True)
                 if r.status_code == 200:
@@ -168,7 +179,7 @@ class FlowManager:
                 print(f"Eroare download {url}: {e}")
 
         if saved_count > 0:
-            wa.send_text(self.phone, f"Am primit {saved_count} fișier(e). Analizez...")
+            self.client.send_text(self.case, f"Am primit {saved_count} fișier(e). Analizez...")
             # Verificăm statusul imediat (pt Video)
             self._check_documents_status()
 
@@ -180,8 +191,8 @@ class FlowManager:
             self.case.resolution_choice = Case.Resolution.SERVICE_RAR
             self.case.is_human_managed = True
             self.case.save()
-            wa.send_text(
-                self.phone,
+            self.client.send_text(
+                self.case,
                 "✅ Am notat opțiunea Service. Un coleg va prelua dosarul pentru a stabili programarea.",
             )
             return True # Stop processing
@@ -189,12 +200,12 @@ class FlowManager:
         elif "regie" in text:
             self.case.resolution_choice = Case.Resolution.OWN_REGIME
             choice_made = True
-            wa.send_text(self.phone, "✅ Am notat: Regie Proprie.")
+            self.client.send_text(self.case, "✅ Am notat: Regie Proprie.")
 
         elif "totala" in text:
             self.case.resolution_choice = Case.Resolution.TOTAL_LOSS
             choice_made = True
-            wa.send_text(self.phone, "✅ Am notat: Daună Totală.")
+            self.client.send_text(self.case, "✅ Am notat: Daună Totală.")
 
         if choice_made:
             self.case.save()
@@ -227,15 +238,15 @@ class FlowManager:
                 self.case.save()
                 self._send_signature_link()
             else:
-                 wa.send_buttons(
-                    self.phone,
+                 self.client.send_buttons(
+                    self.case,
                     "Ai încărcat toate documentele necesare. Cum dorești să soluționezi?",
                     ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"]
                 )
         else:
              # Lipsesc acte. Informăm utilizatorul.
              msg = "👍 Am primit. Mai am nevoie de:\n- " + "\n- ".join(missing)
-             wa.send_text(self.phone, msg)
+             self.client.send_text(self.case, msg)
 
     def _handle_offer_decision(self, text):
         text = text.lower()
@@ -248,16 +259,16 @@ class FlowManager:
             from apps.claims.tasks import send_offer_acceptance_email_task
             send_offer_acceptance_email_task.delay(self.case.id)
 
-            wa.send_text(
-                self.phone,
+            self.client.send_text(
+                self.case,
                 "✅ Am trimis acceptul către asigurator. Te anunțăm când se confirmă plata/închiderea."
             )
             return
 
         # 2. Change Option Request
         if "schimb" in text or "modific" in text:
-            wa.send_buttons(
-                self.phone,
+            self.client.send_buttons(
+                self.case,
                 "Ce variantă preferi acum?",
                 ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"]
             )
@@ -273,8 +284,8 @@ class FlowManager:
 
             send_option_change_email_task.delay(self.case.id, "Service Autorizat RAR")
 
-            wa.send_text(
-                self.phone,
+            self.client.send_text(
+                self.case,
                 "✅ Am notat schimbarea pe Service RAR. Un coleg te va contacta."
             )
             return
@@ -286,8 +297,8 @@ class FlowManager:
 
             send_option_change_email_task.delay(self.case.id, "Regie Proprie")
 
-            wa.send_text(
-                self.phone,
+            self.client.send_text(
+                self.case,
                 "✅ Am notificat asiguratorul că dorești Regie Proprie. Așteptăm recalcularea."
             )
             return
@@ -299,15 +310,15 @@ class FlowManager:
 
             send_option_change_email_task.delay(self.case.id, "Dauna Totala")
 
-            wa.send_text(
-                self.phone,
+            self.client.send_text(
+                self.case,
                 "✅ Am notificat asiguratorul că soliciți Daună Totală."
             )
             return
 
         else:
-            wa.send_buttons(
-                self.phone,
+            self.client.send_buttons(
+                self.case,
                 "Te rog alege o opțiune validă:",
                 ["Accept Oferta", "Schimb Optiunea"]
             )
@@ -319,4 +330,4 @@ class FlowManager:
             "📝 Dosar complet! Mai avem un singur pas: Semnarea Mandatului.\n"
             f"Te rog intră aici și semnează:\n{link}"
         )
-        wa.send_text(self.phone, msg)
+        self.client.send_text(self.case, msg)
