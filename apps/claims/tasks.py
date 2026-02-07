@@ -17,6 +17,7 @@ import shutil
 # --- TASK 1: Procesare Input (Documente & AI) ---
 @shared_task
 def analyze_document_task(document_id):
+    doc = None
     try:
         print(f"--- [AI WORKER] Procesez Doc ID: {document_id} cu OpenAI ---")
 
@@ -73,10 +74,19 @@ def analyze_document_task(document_id):
         case.save()
 
         # 3. Verificare Flux și Notificare
-        check_status_and_notify(case)
+        check_status_and_notify(case, processed_doc=doc)
 
     except Exception as e:
         print(f"--- [AI ERROR] {e} ---")
+        if doc:
+            try:
+                client = get_client(doc.case)
+                client.send_text(
+                    doc.case,
+                    "⚠️ A apărut o eroare la procesarea documentului. Te rog încearcă din nou sau încarcă o poză mai clară.",
+                )
+            except Exception:
+                pass
 
 
 def get_client(case):
@@ -87,7 +97,7 @@ def get_client(case):
     return WhatsAppClient()
 
 
-def check_status_and_notify(case):
+def check_status_and_notify(case, processed_doc=None):
     """
     Verifică ce documente lipsesc și notifică clientul pe WhatsApp/Web.
     """
@@ -141,7 +151,7 @@ def check_status_and_notify(case):
                 )
         else:
             # Încă lipsesc acte
-            doc_obj = case.documents.last()
+            doc_obj = processed_doc or case.documents.last()
             doc_name = doc_obj.get_doc_type_display() if doc_obj else "Documentul"
             msg = f"👍 Am validat {doc_name}.\nMai am nevoie de:\n- " + "\n- ".join(
                 missing
