@@ -1,14 +1,17 @@
 import json
+import re
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
+from django.core.exceptions import ValidationError
 from twilio.request_validator import RequestValidator
 from apps.claims.models import Client, Case, CommunicationLog
 from .flow import FlowManager
 from .utils import WhatsAppClient
+from .security import rate_limit, validate_and_rename_file, sanitize_text, get_session_key
 
 
 @csrf_exempt
@@ -75,11 +78,12 @@ def whatsapp_webhook(request):
 
 # --- WEB CHAT API ---
 
-@csrf_exempt
+@rate_limit(rate="10/m")  # Limitează login-urile de pe același IP
 def chat_login(request):
     """
     Autentificare simplă prin nume și telefon.
-    Returnează sesiunea (case_id).
+    Returnează sesiunea (case_id setat in sesiune).
+    CSRF protejat.
     """
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
@@ -89,12 +93,20 @@ def chat_login(request):
         phone = data.get("phone", "").strip()
         name = data.get("name", "").strip()
 
+        # 1. Validare Telefon (Regex simplu: +40 sau 07...)
         if not phone:
             return JsonResponse({"error": "Phone number is required"}, status=400)
 
-        client, _ = Client.objects.get_or_create(phone_number=phone)
+        # Stergem spatii/caractere nedorite
+        phone_clean = re.sub(r'[^0-9+]', '', phone)
+        # Validare format romanesc
+        if not re.match(r'^(\+40|0)7\d{8}$', phone_clean):
+             return JsonResponse({"error": "Număr de telefon invalid. Folosiți formatul 07xxxxxxxx."}, status=400)
+
+        # 2. Logica Client
+        client, _ = Client.objects.get_or_create(phone_number=phone_clean)
         if name:
-            client.full_name = name
+            client.full_name = sanitize_text(name)
             client.save()
 
         case = Case.objects.filter(client=client).exclude(stage=Case.Stage.CLOSED).last()
@@ -102,33 +114,39 @@ def chat_login(request):
         if not case:
             # Caz nou - inițiem flow-ul de Greeting
             case = Case.objects.create(client=client, stage=Case.Stage.GREETING)
-            # Declansăm mesajul de bun venit
-            manager = FlowManager(case, phone, channel="WEB")
-            # Trimitem un mesaj fals pentru a declanșa logica din _handle_greeting (else branch)
+            manager = FlowManager(case, phone_clean, channel="WEB")
             manager.process_message("text", "START_WEB_SESSION")
+
+        # 3. Setează Sesiunea (Secure)
+        request.session['case_id'] = str(case.id)
+        # Setează expirarea sesiunii la 10 ani (persistent)
+        request.session.set_expiry(315360000)
 
         return JsonResponse({
             "success": True,
-            "case_id": str(case.id),
-            "client_id": str(client.id)
+            # Nu mai returnam case_id si client_id direct pentru a nu le expune in JS daca nu e nevoie
+            # Frontend-ul poate folosi cookie-ul de sesiune.
+            # Dar pentru compatibilitate cu codul existent de frontend, am putea returna case_id?
+            # Userul a cerut SECURITATE. Nu e bine sa expui UUID-ul daca sesiunea e suficienta.
+            # Totusi, poll/send foloseau case_id in params. Vom schimba si acolo.
         })
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
 
-@csrf_exempt
+@rate_limit(rate="60/m", key_func=get_session_key)
 def chat_history(request):
     """
     Returnează istoricul conversației.
+    Protejat prin Sesiune.
     """
-    case_id = request.GET.get("case_id")
+    case_id = request.session.get('case_id')
     if not case_id:
-        return JsonResponse({"error": "Missing case_id"}, status=400)
+        return JsonResponse({"error": "Unauthorized"}, status=401)
 
     logs = CommunicationLog.objects.filter(case_id=case_id).order_by("created_at")
     history = []
     for log in logs:
-        # Nu trimitem metadatele interne sensibile, dar trimitem butoanele
         history.append({
             "id": log.id,
             "direction": log.direction,
@@ -141,53 +159,56 @@ def chat_history(request):
     return JsonResponse({"messages": history})
 
 
-@csrf_exempt
+@rate_limit(rate="30/m", key_func=get_session_key)
 def chat_send(request):
     """
     Primește mesaje de la client (Web).
-    Suportă text și upload fișiere.
+    Protejat prin Sesiune + Sanitizare + Validare Fișiere.
     """
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
-    case_id = request.POST.get("case_id")
-    message = request.POST.get("message", "")
-
+    case_id = request.session.get('case_id')
     if not case_id:
-        return JsonResponse({"error": "Missing case_id"}, status=400)
+        return JsonResponse({"error": "Unauthorized"}, status=401)
 
     try:
         case = Case.objects.get(id=case_id)
     except Case.DoesNotExist:
         return JsonResponse({"error": "Case not found"}, status=404)
 
+    # Procesare mesaj text (Sanitizare)
+    message = request.POST.get("message", "")
+    message = sanitize_text(message)
+
     # Procesare fișiere uploadate
     media_urls = []
     if request.FILES:
         for key, file in request.FILES.items():
-            # Salvăm temporar fișierul pentru a avea un URL
-            # Îl salvăm în 'uploads/temp/'
-            path = default_storage.save(f"uploads/temp/{file.name}", ContentFile(file.read()))
+            try:
+                # Validare & Redenumire
+                valid_file = validate_and_rename_file(file)
 
-            # Construim URL-ul complet accesibil
-            # Atenție: APP_DOMAIN trebuie să fie accesibil de server (requests.get)
-            domain = settings.APP_DOMAIN
-            if not domain.endswith("/"):
-                domain += "/"
+                # Salvare
+                path = default_storage.save(f"uploads/temp/{valid_file.name}", ContentFile(valid_file.read()))
 
-            # MEDIA_URL e de obicei /media/
-            media_url = settings.MEDIA_URL
-            if media_url.startswith("/"):
-                media_url = media_url[1:]
+                # URL
+                domain = settings.APP_DOMAIN.rstrip("/")
+                media_url_path = settings.MEDIA_URL.strip("/")
+                full_url = f"{domain}/{media_url_path}/{path}"
+                media_urls.append((full_url, valid_file.content_type)) # Content type original sau detectat? Pastram ce a venit din browser/validare.
 
-            full_url = f"{domain}{media_url}{path}"
-            media_urls.append((full_url, file.content_type))
+            except ValidationError as ve:
+                return JsonResponse({"error": str(ve)}, status=400)
+            except Exception as e:
+                return JsonResponse({"error": "Eroare la upload fisier"}, status=500)
 
-    # Logăm mesajul IN (Web)
-    # Dacă e doar upload, punem un text placeholder
     log_text = message
     if not log_text and media_urls:
         log_text = f"[Uploaded {len(media_urls)} files]"
+
+    if not log_text and not media_urls:
+        return JsonResponse({"error": "Empty message"}, status=400)
 
     CommunicationLog.objects.create(
         case=case,
@@ -196,26 +217,24 @@ def chat_send(request):
         content=log_text
     )
 
-    # Inițiem FlowManager pe canalul WEB
     manager = FlowManager(case, case.client.phone_number, channel="WEB")
-
     msg_type = "image" if media_urls else "text"
     manager.process_message(msg_type, message, media_urls=media_urls)
 
     return JsonResponse({"success": True})
 
 
-@csrf_exempt
+@rate_limit(rate="120/m", key_func=get_session_key) # Polling rapid
 def chat_poll(request):
     """
     Polling pentru mesaje noi.
-    Clientul trimite last_id (id-ul ultimului mesaj pe care îl are).
+    Protejat prin Sesiune.
     """
-    case_id = request.GET.get("case_id")
+    case_id = request.session.get('case_id')
     last_id = request.GET.get("last_id", 0)
 
     if not case_id:
-        return JsonResponse({"error": "Missing case_id"}, status=400)
+        return JsonResponse({"error": "Unauthorized"}, status=401)
 
     logs = CommunicationLog.objects.filter(case_id=case_id, id__gt=last_id).order_by("created_at")
     new_messages = []
