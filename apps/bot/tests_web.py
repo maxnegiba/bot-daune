@@ -123,3 +123,53 @@ class WebChatTestCase(TestCase):
         found_ack = any("1 fișier" in m['content'] for m in msgs if m['direction'] == 'OUT')
         # If flow logic sends ACK for images
         # The previous test asserted this, so I assume it's true.
+
+    def test_deleted_case_session_handling(self):
+        """
+        Verify that if a case is deleted, subsequent requests with the old session
+        return 401 Unauthorized (triggering logout on frontend).
+        """
+        # 1. Login
+        resp = self.c.post(
+            '/bot/chat/login/',
+            data=json.dumps({"phone": self.phone, "name": self.name}),
+            content_type="application/json"
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        # Verify session
+        session = self.c.session
+        case_id = session.get('case_id')
+        self.assertIsNotNone(case_id)
+
+        # Verify case exists
+        case = Case.objects.get(id=case_id)
+        self.assertIsNotNone(case)
+
+        # 2. Delete the case
+        case.delete()
+
+        # 3. Check History -> Should fail with 401
+        resp = self.c.get('/bot/chat/history/')
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.json()['error'], "Case invalid")
+
+        # Session should be flushed
+        self.assertTrue(len(self.c.session.keys()) == 0)
+
+        # 4. Check Send -> Should fail with 401
+        # Note: self.c might not automatically update its session cookie if we don't reload it?
+        # Actually TestClient mimics a browser, so it should handle cookies.
+        # But if the session was flushed on the server side, the next request from client
+        # might still send the old session cookie unless the response contained instructions to clear it.
+        # Django session flush sends a new (empty) session cookie usually.
+
+        # Let's verify behavior.
+        resp = self.c.post('/bot/chat/send/', {'message': 'Hello'})
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.json()['error'], "Unauthorized")
+
+        # 5. Check Poll -> Should fail with 401
+        resp = self.c.get('/bot/chat/poll/')
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.json()['error'], "Unauthorized")
