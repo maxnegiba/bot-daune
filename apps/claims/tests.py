@@ -106,3 +106,40 @@ class SignalVehicleTestCase(TestCase):
         # VIN should NOT be overwritten with empty string
         self.assertEqual(v.vin_number, "VIN_ORIGINAL")
         self.assertEqual(v.driver_name, "Sofer Nou")
+
+    def test_create_vehicle_with_insurance(self):
+        # Test creating a vehicle with insurance company
+        update_or_create_vehicle(
+            self.case,
+            role_identifier="A",
+            license_plate="B123AAA",
+            vin="VIN123",
+            driver_name="Sofer A",
+            is_guilty_verdict="Vehicul A",
+            insurance_company="Compania X"
+        )
+
+        v = InvolvedVehicle.objects.get(license_plate="B123AAA")
+        self.assertEqual(v.insurance_company_name, "Compania X")
+
+    def test_update_vehicle_insurance(self):
+        # 1. Create vehicle
+        v = InvolvedVehicle.objects.create(
+            case=self.case,
+            license_plate="B123AAA",
+            insurance_company_name="Old Company"
+        )
+
+        # 2. Update with new insurance
+        update_or_create_vehicle(
+            self.case,
+            role_identifier="A",
+            license_plate="B123AAA",
+            vin=None,
+            driver_name=None,
+            is_guilty_verdict=None,
+            insurance_company="New Company"
+        )
+
+        v.refresh_from_db()
+        self.assertEqual(v.insurance_company_name, "New Company")

@@ -28,6 +28,7 @@ def process_ocr_data(sender, instance, created, **kwargs):
             vin=extracted.get("vin_a"),
             driver_name=extracted.get("nume_sofer_a"),
             is_guilty_verdict=analiza.get("vinovat_probabil"),
+            insurance_company=extracted.get("asigurator_a"),
         )
 
         # Procesăm Vehiculul B
@@ -38,6 +39,7 @@ def process_ocr_data(sender, instance, created, **kwargs):
             vin=extracted.get("vin_b"),
             driver_name=extracted.get("nume_sofer_b"),
             is_guilty_verdict=analiza.get("vinovat_probabil"),
+            insurance_company=extracted.get("asigurator_b"),
         )
 
     # --- LOGICA PENTRU PROCURĂ / TALON ---
@@ -55,7 +57,13 @@ def process_ocr_data(sender, instance, created, **kwargs):
 
 
 def update_or_create_vehicle(
-    case, role_identifier, license_plate, vin, driver_name, is_guilty_verdict
+    case,
+    role_identifier,
+    license_plate,
+    vin,
+    driver_name,
+    is_guilty_verdict,
+    insurance_company=None,
 ):
     """
     Funcție ajutătoare care caută vehiculul și îl actualizează, sau îl creează.
@@ -72,6 +80,11 @@ def update_or_create_vehicle(
     )
     vin = vin.strip().upper() if vin and vin != "null" else None
     driver_name = driver_name.strip() if driver_name and driver_name != "null" else None
+    insurance_company = (
+        insurance_company.strip()
+        if insurance_company and insurance_company != "null"
+        else None
+    )
 
     if not license_plate:
         return
@@ -79,13 +92,15 @@ def update_or_create_vehicle(
     # 2. Determinăm Vinovăția din verdictul AI-ului (dacă există)
     new_is_offender = None
     if is_guilty_verdict:
-         if role_identifier in is_guilty_verdict:
-             new_is_offender = True
-         else:
-             new_is_offender = False
+        if role_identifier in is_guilty_verdict:
+            new_is_offender = True
+        else:
+            new_is_offender = False
 
     # 3. Căutăm manual pentru a nu suprascrie datele existente cu valori goale/false
-    vehicle = InvolvedVehicle.objects.filter(case=case, license_plate=license_plate).first()
+    vehicle = InvolvedVehicle.objects.filter(
+        case=case, license_plate=license_plate
+    ).first()
     created = False
 
     if vehicle:
@@ -94,6 +109,8 @@ def update_or_create_vehicle(
             vehicle.vin_number = vin
         if driver_name:
             vehicle.driver_name = driver_name
+        if insurance_company:
+            vehicle.insurance_company_name = insurance_company
 
         # Actualizăm vinovăția DOAR dacă avem un verdict nou clar
         if new_is_offender is not None:
@@ -107,7 +124,8 @@ def update_or_create_vehicle(
             license_plate=license_plate,
             vin_number=vin or "",
             driver_name=driver_name or "",
-            is_offender=new_is_offender if new_is_offender is not None else False
+            insurance_company_name=insurance_company or "",
+            is_offender=new_is_offender if new_is_offender is not None else False,
         )
         created = True
 
