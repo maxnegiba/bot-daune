@@ -18,23 +18,53 @@ class DocumentAnalyzer:
 
         # 2. Prompt compatibil cu signals.py
         prompt_text = """
-        Ești un expert în asigurări auto. Analizează imaginea atașată (OCR).
-        
+        Ești un expert în asigurări auto și procesare de documente (OCR).
+        Analizează cu atenție imaginea atașată. Dacă este un formular "Constatare Amiabilă de Accident", fii foarte atent la separarea coloanelor A (Vehicul A - Stânga/Albastru) și B (Vehicul B - Dreapta/Galben).
+
         SARCINA: Identifică tipul documentului și extrage datele pentru dosarul de daună.
-        
+
+        ATENȚIE:
+        - NU INVENTA DATE. Dacă scrisul este ilizibil sau câmpul este gol, returnează null.
+        - Verifică cu atenție numerele de înmatriculare și seriile de șasiu (VIN).
+
         TIPURI ACCEPTATE (tip_document):
         ["CI" (Buletin), "PERMIS", "TALON" (Certificat Inmatriculare), "AMIABILA", "PROCURA", "EXTRAS" (Extras Cont), "ACTE_VINOVAT", "ALTELE"]
 
         EXTRAGERE DATE (date_extrase):
-        - Pentru AMIABILA: Extrage 'nr_auto_a', 'vin_a', 'nume_sofer_a' (Vehicul A) și 'nr_auto_b', 'vin_b', 'nume_sofer_b' (Vehicul B).
-        - Pentru TALON/PROCURA/ALTELE: Extrage 'nr_auto', 'vin', 'nume', 'cnp'.
-        - Pentru BULETIN: Extrage 'nume', 'cnp'.
-        - Pentru EXTRAS: Extrage 'iban', 'titular_cont'.
-        - Pentru ACTE_VINOVAT: Extrage 'asigurator_vinovat', 'nr_polita'.
-        
+
+        1. PENTRU AMIABILA (Constatare Amiabila):
+           - Caută rubricile:
+             - 7. Vehicul (Marca, Tip, Nr. Înmatriculare)
+             - 8. Societate de asigurări (Denumire)
+             - 9. Conducător vehicul (Nume, Prenume)
+
+           - Extrage pentru Vehicul A (Stânga/Albastru):
+             - 'nr_auto_a': Nr. Înmatriculare (ex: B 123 ABC)
+             - 'vin_a': Serie Șasiu (DOAR dacă apare explicit, altfel null)
+             - 'nume_sofer_a': Nume și Prenume șofer
+             - 'asigurator_a': Societatea de asigurări
+
+           - Extrage pentru Vehicul B (Dreapta/Galben):
+             - 'nr_auto_b': Nr. Înmatriculare
+             - 'vin_b': Serie Șasiu (DOAR dacă apare explicit, altfel null)
+             - 'nume_sofer_b': Nume și Prenume șofer
+             - 'asigurator_b': Societatea de asigurări
+
+        2. PENTRU TALON / PROCURA / ALTELE:
+           - Extrage 'nr_auto', 'vin', 'nume', 'cnp'.
+
+        3. PENTRU BULETIN (CI):
+           - Extrage 'nume', 'cnp'.
+
+        4. PENTRU EXTRAS CONT:
+           - Extrage 'iban', 'titular_cont'.
+
+        5. PENTRU ACTE VINOVAT (RCA, etc):
+           - Extrage 'asigurator_vinovat', 'nr_polita'.
+
         ANALIZA ACCIDENT (analiza_accident):
-        - Doar pentru Amiabilă: Cine pare vinovat? ("A", "B", sau "Comun").
-        
+        - Doar pentru Amiabilă: Cine pare vinovat pe baza schiței și a căsuțelor bifate? ("A", "B", sau "Comun").
+
         Răspunde STRICT în format JSON:
         {
             "tip_document": "...",
