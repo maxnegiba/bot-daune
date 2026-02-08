@@ -11,3 +11,4 @@ gunicorn
 whitenoise
 reportlab
 weasyprint
+Pillow
