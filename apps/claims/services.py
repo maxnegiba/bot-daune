@@ -84,14 +84,30 @@ class DocumentAnalyzer:
         2. NUMERE DE ÎNMATRICULARE (Format Românesc):
            - Format uzual: [JJ NN LLL] sau [B NNN LLL] (ex: AG 22 PAW, B 101 ABC).
            - JUDEȚE VALIDE: B, AB, AR, AG, BC, BH, BN, BR, BT, BV, BZ, CJ, CL, CS, CT, CV, DB, DJ, GJ, GL, GR, HD, HR, IF, IL, IS, MH, MM, MS, NT, OT, PH, SB, SJ, SM, SV, TL, TM, TR, VL, VN, VS.
-           - ATENȚIE: Dacă vezi 'B' dar formatul numărului este [JJ NN LLL] (ex: B 86 MYH), corectează 'B' cu județul valid care seamănă cel mai mult (ex: DB, BZ). 'B' simplu are format [B NNN LLL].
-           - Verifică atent caracterele similare: '0' (cifră) vs 'O' (literă), '1' vs 'I', '8' vs 'B', 'D' vs '0'.
+           - ATENȚIE JUDEȚE: Fii foarte atent la județul 'DB' (Dâmbovița). Adesea este scris de mână să semene cu 'B' sau '0B'.
+             Dacă vezi un număr de forma "B NN LLL" (ex: B 86 MYH), acesta este INVALID pentru București. București are forma "B NNN LLL".
+             În acest caz, verifică dacă prima literă poate fi 'D' (DB) sau alt județ (SB, AB, UB).
+             Exemplu: "B 36 NYH" -> VERIFICĂ DACA ESTE "DB 86 MYH" sau "AB 96 MYH".
+
+           - CONFUZII FRECVENTE CARACTERE:
+             - 'D' vs 'B' vs '0' (Zero)
+             - 'M' vs 'N' vs 'H'
+             - '3' vs '8' vs 'B'
+             - '1' vs 'I' vs 'L'
+             - 'Z' vs '2' vs '7'
+
            - Dacă ești nesigur de un caracter, returnează null pentru tot numărul decât să inventezi.
 
         3. NUME ȘI PRENUME:
            - PRIORITATE MAXIMĂ: Extrage numele din Rubrica 6 ("Asigurat/Deținător"). Acesta este numele legal al deținătorului.
            - FALLBACK: Folosește Rubrica 9 ("Conducător vehicul") DOAR DACĂ Rubrica 6 este ilizibilă sau goală.
-           - CORECȚII LOGICE: Corectează numele trunchiate. De exemplu "ILE" -> "ILIE", "GHE" -> "GHEORGHE", "NIC" -> "NICOLAE". Transcrie numele complet.
+           - CORECȚII LOGICE: Corectează numele trunchiate sau scrise neclar.
+             - "ILE" -> "ILIE"
+             - "GHE" -> "GHEORGHE"
+             - "NIC" -> "NICOLAE"
+             - "BOBLEA" -> Verifică dacă nu cumva este "BOBLEAC" (terminația 'C' sau 'AC' poate fi mică/înghesuită).
+             - Verifică prima literă: 'D' poate fi confundat cu 'B' și invers (ex: DOBLEA vs BOBLEA).
+           - Transcrie numele complet, corectând evidentele erori de scriere olografă.
 
         TIPURI ACCEPTATE (tip_document):
         ["CI", "PERMIS", "TALON", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "ALTELE"]
