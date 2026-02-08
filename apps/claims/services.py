@@ -222,28 +222,28 @@ class DocumentAnalyzer:
 
         SARCINA TA: Extrage datele de identificare scrise de mână cu maximă precizie.
 
-        INSTRUCȚIUNI SPECIFICE OCR:
-        1. Numere de Înmatriculare (Format Românesc):
-           - Caută tipare: JJ 00 LLL (ex: AG 22 PAW) sau B 000 LLL.
-           - ATENȚIE: Scrisul de mână poate fi ambiguu.
-             - '0' (zero) vs 'O' (litera O): În numere sunt cifre (ex: 05), în județe litere (ex: OT).
-             - '1' (unu) vs 'I' (litera I): În numere sunt cifre, în județe litere.
-           - Returnează numărul curat, fără spații (ex: AG22PAW).
+        INSTRUCȚIUNI SPECIFICE OCR - CORECTARE ERORI COMUNE:
+        1. Numere de Înmatriculare (Format Românesc Strict):
+           - Structura: [JJ NN LLL] sau [B NNN LLL]
+           - LISTĂ JUDEȚE VALIDE (JJ): AB, AR, AG, B, BC, BH, BN, BR, BT, BV, BZ, CJ, CL, CS, CT, CV, DB, DJ, GJ, GL, GR, HD, HR, IF, IL, IS, MH, MM, MS, NT, OT, PH, SB, SJ, SM, SV, TL, TM, TR, VL, VN, VS.
+           - Confuzii frecvente de evitat:
+             - 'D' vs '0': DB56... -> AB86... (Dacă județul e invalid, verifică dacă litera seamănă cu A sau B).
+             - 'B' vs '8': AB86 -> AB86 (Corect). B56 -> 856 (Nu există județ).
+           - Dacă literele județului nu sunt în lista validă, încearcă să corectezi vizual (ex: "DB" care pare "AB" sau invers).
 
         2. Nume și Prenume:
-           - Verifică Rubrica 9 "Conducător vehicul" (cea mai importantă).
-           - Verifică Rubrica 6 "Asigurat/Deținător poliță".
-           - Numele sunt de obicei scrise cu MAJUSCULE.
-           - Transcrie exact ce vezi scris de mână.
+           - Prioritate: Rubrica 9 "Conducător vehicul". Dacă e ilizibil, folosește Rubrica 6 "Asigurat".
+           - Numele sunt scrise cu MAJUSCULE.
+           - Atenție la litere similare: 'C' vs 'L', 'I' vs 'T', 'U' vs 'V', 'A' vs '4'.
+           - Nu inventa terminații (ex: "VELHO" -> "VLAD", "DOBLEAC" -> "DOBLEA"). Dacă nu ești sigur, transcrie doar ce e clar.
 
         3. Serie Șasiu (VIN):
-           - Caută un cod de 17 caractere la Rubrica 7 sau în partea de jos a secțiunii.
-           - ATENȚIE: NU confunda cu Numărul de Telefon (care începe cu 07...).
-           - Dacă e un număr de telefon, ignoră-l. Returnează doar VIN-ul real sau null.
+           - Caută un șir de 17 caractere alfanumerice.
+           - Poate fi scris oriunde în secțiunea vehiculului (Rubrica 7 sau jos).
+           - NU confunda cu Telefon (07xx...). Dacă găsești doar telefon, returnează null la VIN.
 
         4. Asigurator:
-           - Verifică Rubrica 8 "Societate de asigurări".
-           - Extrage numele companiei (ex: GROUPAMA, ALLIANZ, GENERALI, EUROINS, HELLAS DIRECT, etc).
+           - Rubrica 8.
 
         Returnează JSON STRICT cu cheile:
         {{
