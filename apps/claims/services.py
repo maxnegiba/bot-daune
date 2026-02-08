@@ -88,11 +88,12 @@ class DocumentAnalyzer:
              Dacă vezi un număr de forma "B NN LLL" (ex: B 86 MYH), acesta este INVALID pentru București. București are forma "B NNN LLL".
              În acest caz, verifică dacă prima literă poate fi 'D' (DB) sau alt județ (SB, AB, UB).
              Exemplu: "B 36 NYH" -> VERIFICĂ DACA ESTE "DB 86 MYH" sau "AB 96 MYH".
+             Exemplu: "B 356 NYH" -> VERIFICĂ DACA ESTE "DB 86 MYH". Adesea "8" este citit greșit ca "3" sau "35".
 
            - CONFUZII FRECVENTE CARACTERE:
              - 'D' vs 'B' vs '0' (Zero)
              - 'M' vs 'N' vs 'H'
-             - '3' vs '8' vs 'B'
+             - '3' vs '8' vs 'B' (Atenție la numărul 8 care poate părea 3 sau 35)
              - '1' vs 'I' vs 'L'
              - 'Z' vs '2' vs '7'
 
@@ -105,7 +106,8 @@ class DocumentAnalyzer:
              - "ILE" -> "ILIE"
              - "GHE" -> "GHEORGHE"
              - "NIC" -> "NICOLAE"
-             - "BOBLEA" -> Verifică dacă nu cumva este "BOBLEAC" (terminația 'C' sau 'AC' poate fi mică/înghesuită).
+             - "BOBLEA" -> Este aproape sigur "BOBLEAC". Verifică dacă nu cumva terminația 'C' sau 'AC' este mică/înghesuită.
+             - "DOBLEA" -> Verifică dacă este "BOBLEA" sau "BOBLEAC". 'D' inițial poate fi confundat cu 'B'.
              - Verifică prima literă: 'D' poate fi confundat cu 'B' și invers (ex: DOBLEA vs BOBLEA).
            - Transcrie numele complet, corectând evidentele erori de scriere olografă.
 
@@ -134,6 +136,7 @@ class DocumentAnalyzer:
         ANALIZA ACCIDENT (analiza_accident) - Folosește Imaginea 1 (Completă):
         - Analizează schița și bifelor de la rubrica 12.
         - Determină cine este vinovat: "A", "B", "Comun" sau "Neculpa".
+        - REGULA PRIORITARĂ: Dacă un vehicul (ex: A) bifează DOAR căsuța 9 ("Deplasându-se în același sens") iar celălalt (ex: B) bifează căsuța 11 ("Depășind") sau 10 ("Schimbând banda"), VINOVAT este cel care face manevra activă (B).
 
         Răspunde STRICT în format JSON:
         {
