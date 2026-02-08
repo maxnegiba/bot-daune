@@ -1,6 +1,8 @@
 import base64
 import json
 import logging
+import io
+from PIL import Image
 from openai import OpenAI
 from django.conf import settings
 
@@ -12,74 +14,97 @@ class DocumentAnalyzer:
     def analyze(image_path):
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-        # 1. Codificare imagine în Base64
-        with open(image_path, "rb") as image_file:
-            base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+        # 1. Load image and generate splits using Pillow
+        try:
+            with open(image_path, "rb") as image_file:
+                original_bytes = image_file.read()
 
-        # 2. Prompt compatibil cu signals.py
+            # Create PIL Image for splitting
+            img = Image.open(io.BytesIO(original_bytes))
+            width, height = img.size
+
+            # Split vertically
+            left_crop = img.crop((0, 0, width // 2, height))
+            right_crop = img.crop((width // 2, 0, width, height))
+
+            # Helper to convert PIL image to base64
+            def pil_to_base64(pil_img):
+                buffered = io.BytesIO()
+                pil_img.save(buffered, format="JPEG")
+                return base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+            # Helper for bytes
+            def bytes_to_base64(data):
+                return base64.b64encode(data).decode("utf-8")
+
+            base64_full = bytes_to_base64(original_bytes)
+            base64_left = pil_to_base64(left_crop)
+            base64_right = pil_to_base64(right_crop)
+
+        except Exception as e:
+            logger.error(f"Eroare procesare imagine (Pillow): {e}")
+            # Fallback in case of image error: rely on original bytes only if split fails
+            # But usually if PIL fails, the image is bad.
+            return {"tip_document": "UNKNOWN", "date_extrase": {}, "error": f"Image processing error: {str(e)}"}
+
+        # 2. Prompt avansat pentru strategie Split & Scan
         prompt_text = """
         Ești un expert în asigurări auto și procesare de documente (OCR), specializat pe documente românești.
-        Analizează cu atenție imaginea atașată.
+        Ai la dispoziție 3 imagini pentru a asigura o precizie maximă a datelor.
+
+        IMAGINILE PRIMITE:
+        1. IMAGINEA COMPLETĂ (Original): Pentru context general, tip document și analiza schiței accidentului.
+        2. CROP STÂNGA (Vehicul A): Conține DOAR datele pentru Vehiculul A (Coloana Albastră). Folosește-o pentru a extrage datele vehiculului A.
+        3. CROP DREAPTA (Vehicul B): Conține DOAR datele pentru Vehiculul B (Coloana Galbenă). Folosește-o pentru a extrage datele vehiculului B.
 
         SARCINA PRINCIPALĂ:
         Identifică tipul documentului și extrage datele cu maximă precizie.
-        Dacă este un formular "Constatare Amiabilă de Accident", trebuie să separi STRICT datele din Coloana A (Stânga/Albastru) de cele din Coloana B (Dreapta/Galben).
 
-        INSTRUCȚIUNI CRITICE PENTRU AMIABILĂ:
-        1. SEPARAREA COLOANELOR:
-           - Coloana A (STÂNGA, fundal albastru) -> Vehicul A.
-           - Coloana B (DREAPTA, fundal galben) -> Vehicul B.
-           - Nu amesteca datele între cele două vehicule.
+        INSTRUCȚIUNI CRITICE PENTRU AMIABILĂ (Constatare Amiabilă de Accident):
+
+        1. UTILIZAREA IMAGINILOR:
+           - Pentru 'nr_auto_a', 'nume_sofer_a', 'asigurator_a': Bazează-te PRIORITAR pe Imaginea 2 (Stânga).
+           - Pentru 'nr_auto_b', 'nume_sofer_b', 'asigurator_b': Bazează-te PRIORITAR pe Imaginea 3 (Dreapta).
+           - Nu amesteca datele între cele două vehicule!
 
         2. NUMERE DE ÎNMATRICULARE (Format Românesc):
-           - Caută tipare de forma: [JJ NN LLL] (ex: AG 22 PAW, DJ 05 XYZ) sau [B NNN LLL] (ex: B 101 ABC).
-           - Fii atent la confuzia dintre '0' (cifra zero) și 'O' (litera O), sau '1' (cifra unu) și 'I' (litera I). Corectează pe baza contextului (de ex. județul 'DJ' nu 'D1', numărul '05' nu 'O5').
-           - Pentru numere străine, copiază exact ce vezi.
+           - Format uzual: [JJ NN LLL] (ex: AG 22 PAW, B 101 ABC).
+           - Verifică atent caracterele similare: '0' (cifră) vs 'O' (literă), '1' vs 'I', '8' vs 'B'.
+           - Corectează județele invalide (ex: 'D1' -> 'DJ').
 
         3. NUME ȘI PRENUME:
-           - De obicei sunt scrise cu MAJUSCULE de mână.
-           - Caută la secțiunea 9 "Conducător vehicul" (Nume, Prenume) și secțiunea 6 "Asigurat".
-           - Dacă scrisul este greu lizibil, oferă cea mai probabilă transcriere.
+           - Caută la secțiunea 9 "Conducător vehicul" și secțiunea 6 "Asigurat".
+           - Transcrie numele complet, corectând majusculele olografe ilizibile.
 
         TIPURI ACCEPTATE (tip_document):
-        ["CI" (Buletin), "PERMIS", "TALON" (Certificat Inmatriculare), "AMIABILA", "PROCURA", "EXTRAS" (Extras Cont), "ACTE_VINOVAT", "ALTELE"]
+        ["CI", "PERMIS", "TALON", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "ALTELE"]
 
         EXTRAGERE DATE (date_extrase):
 
-        1. PENTRU AMIABILA (Constatare Amiabila):
-           - Extrage pentru Vehicul A (Stânga/Albastru):
-             - 'nr_auto_a': Nr. Înmatriculare (ex: AG 22 PAW) - Verifică la Rubrica 7.
-             - 'vin_a': Serie Șasiu (DOAR dacă apare explicit la Rubrica 7 sau jos).
-             - 'nume_sofer_a': Nume și Prenume șofer (Rubrica 9).
+        1. PENTRU AMIABILA:
+           - Vehicul A (Imaginea 2 - Stânga):
+             - 'nr_auto_a': Nr. Înmatriculare (Rubrica 7).
+             - 'vin_a': Serie Șasiu (Opțional/Dacă este lizibil).
+             - 'nume_sofer_a': Nume și Prenume (Rubrica 9 sau 6).
              - 'asigurator_a': Societatea de asigurări (Rubrica 8).
 
-           - Extrage pentru Vehicul B (Dreapta/Galben):
-             - 'nr_auto_b': Nr. Înmatriculare (ex: AB 96 MYH) - Verifică la Rubrica 7.
-             - 'vin_b': Serie Șasiu.
-             - 'nume_sofer_b': Nume și Prenume șofer (Rubrica 9).
+           - Vehicul B (Imaginea 3 - Dreapta):
+             - 'nr_auto_b': Nr. Înmatriculare (Rubrica 7).
+             - 'vin_b': Serie Șasiu (Opțional/Dacă este lizibil).
+             - 'nume_sofer_b': Nume și Prenume (Rubrica 9 sau 6).
              - 'asigurator_b': Societatea de asigurări (Rubrica 8).
 
-        2. PENTRU TALON / PROCURA / ALTELE:
-           - Extrage 'nr_auto', 'vin', 'nume', 'cnp'.
+        2. PENTRU ALTE DOCUMENTE (Folosește Imaginea 1):
+           - Talon/Procură: 'nr_auto', 'vin', 'nume', 'cnp'.
+           - Buletin: 'nume', 'cnp'.
 
-        3. PENTRU BULETIN (CI):
-           - Extrage 'nume', 'cnp'.
-
-        4. PENTRU EXTRAS CONT:
-           - Extrage 'iban', 'titular_cont'.
-
-        5. PENTRU ACTE VINOVAT (RCA, etc):
-           - Extrage 'asigurator_vinovat', 'nr_polita'.
-
-        ANALIZA ACCIDENT (analiza_accident):
-        - Doar pentru Amiabilă: Analizează cine este vinovat.
-        - Verifică căsuțele bifate la secțiunea 12 (Împrejurări).
-        - Verifică schița accidentului.
-        - Returnează: "A", "B", "Comun" sau "Neculpa" (dacă nu e clar).
+        ANALIZA ACCIDENT (analiza_accident) - Folosește Imaginea 1 (Completă):
+        - Analizează schița și bifelor de la rubrica 12.
+        - Determină cine este vinovat: "A", "B", "Comun" sau "Neculpa".
 
         Răspunde STRICT în format JSON:
         {
-            "tip_document": "...",
+            "tip_document": "AMIABILA",
             "date_extrase": { ... },
             "analiza_accident": { "vinovat_probabil": "..." }
         }
@@ -87,23 +112,38 @@ class DocumentAnalyzer:
 
         try:
             response = client.chat.completions.create(
-                model="gpt-4o",  # Folosim modelul vision
+                model="gpt-4o",
                 messages=[
                     {
                         "role": "user",
                         "content": [
                             {"type": "text", "text": prompt_text},
+                            # Imagine 1: Full
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                    "url": f"data:image/jpeg;base64,{base64_full}"
+                                },
+                            },
+                            # Imagine 2: Stânga (Vehicul A)
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_left}"
+                                },
+                            },
+                            # Imagine 3: Dreapta (Vehicul B)
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_right}"
                                 },
                             },
                         ],
                     }
                 ],
                 max_tokens=1000,
-                temperature=0.0,  # Zero creativitate, doar OCR
+                temperature=0.0,
                 response_format={"type": "json_object"},
             )
 
