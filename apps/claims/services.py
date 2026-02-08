@@ -72,10 +72,10 @@ class DocumentAnalyzer:
             Identifică tipul documentului și extrage datele cu maximă precizie.
             Dacă este un formular "Constatare Amiabilă de Accident", trebuie să separi STRICT datele din Coloana A (Stânga/Albastru) de cele din Coloana B (Dreapta/Galben).
 
-            INSTRUCȚIUNI CRITICE PENTRU AMIABILĂ:
+            INSTRUCȚIUNI CRITICE PENTRU AMIABILĂ (Structură Plată - Fără Obiecte Imbricate):
             1. SEPARAREA COLOANELOR:
-            - Coloana A (STÂNGA, fundal albastru) -> Vehicul A.
-            - Coloana B (DREAPTA, fundal galben) -> Vehicul B.
+            - Coloana A (STÂNGA, fundal albastru) -> Date cu sufixul "_a".
+            - Coloana B (DREAPTA, fundal galben) -> Date cu sufixul "_b".
             - Nu amesteca datele între cele două vehicule.
 
             2. NUMERE DE ÎNMATRICULARE (Format Românesc):
@@ -86,24 +86,29 @@ class DocumentAnalyzer:
             3. NUME ȘI PRENUME:
             - De obicei sunt scrise cu MAJUSCULE de mână.
             - Caută la secțiunea 9 "Conducător vehicul" (Nume, Prenume) și secțiunea 6 "Asigurat".
-            - Dacă scrisul este greu lizibil, oferă cea mai probabilă transcriere.
+            - Ignoră etichete pre-tipărite. Extrage doar scrisul de mână.
+
+            4. ANTI-HALUCINAȚII:
+            - Dacă un câmp nu este lizibil sau este gol, returnează null sau "".
+            - NU INVENTA DATE (ex: nu pune "VL 03 YZY" dacă nu scrie clar).
+            - NU confunda Numere de Telefon cu VIN (Serie Șasiu). VIN are 17 caractere alfanumerice. Telefonul începe cu 07.
 
             TIPURI ACCEPTATE (tip_document):
             ["CI" (Buletin), "PERMIS", "TALON" (Certificat Inmatriculare), "AMIABILA", "PROCURA", "EXTRAS" (Extras Cont), "ACTE_VINOVAT", "ALTELE"]
 
-            EXTRAGERE DATE (date_extrase):
+            EXTRAGERE DATE (date_extrase) - STRUCTURĂ PLATĂ:
 
             1. PENTRU AMIABILA (Constatare Amiabila):
             - Extrage pentru Vehicul A (Stânga/Albastru):
-                - 'nr_auto_a': Nr. Înmatriculare (ex: AG 22 PAW) - Verifică la Rubrica 7.
-                - 'vin_a': Serie Șasiu (DOAR dacă apare explicit la Rubrica 7 sau jos).
-                - 'nume_sofer_a': Nume și Prenume șofer (Rubrica 9).
+                - 'nr_auto_a': Nr. Înmatriculare (Rubrica 7).
+                - 'vin_a': Serie Șasiu (DOAR dacă are 17 caractere. NU TELEFON!).
+                - 'nume_sofer_a': Nume și Prenume șofer (Rubrica 9 sau 6).
                 - 'asigurator_a': Societatea de asigurări (Rubrica 8).
 
             - Extrage pentru Vehicul B (Dreapta/Galben):
-                - 'nr_auto_b': Nr. Înmatriculare (ex: AB 96 MYH) - Verifică la Rubrica 7.
-                - 'vin_b': Serie Șasiu.
-                - 'nume_sofer_b': Nume și Prenume șofer (Rubrica 9).
+                - 'nr_auto_b': Nr. Înmatriculare (Rubrica 7).
+                - 'vin_b': Serie Șasiu (DOAR dacă are 17 caractere. NU TELEFON!).
+                - 'nume_sofer_b': Nume și Prenume șofer (Rubrica 9 sau 6).
                 - 'asigurator_b': Societatea de asigurări (Rubrica 8).
 
             2. PENTRU TALON / PROCURA / ALTELE:
@@ -127,7 +132,10 @@ class DocumentAnalyzer:
             Răspunde STRICT în format JSON:
             {
                 "tip_document": "...",
-                "date_extrase": { ... },
+                "date_extrase": {
+                    "nr_auto_a": "...", "vin_a": "...", "nume_sofer_a": "...", "asigurator_a": "...",
+                    "nr_auto_b": "...", "vin_b": "...", "nume_sofer_b": "...", "asigurator_b": "..."
+                },
                 "analiza_accident": { "vinovat_probabil": "..." }
             }
             """
@@ -223,14 +231,19 @@ class DocumentAnalyzer:
            - Returnează numărul curat, fără spații (ex: AG22PAW).
 
         2. Nume și Prenume:
-           - De obicei la Rubrica 9 "Conducător vehicul" sau Rubrica 6 "Asigurat".
-           - Scris de obicei cu majuscule.
+           - Verifică Rubrica 9 "Conducător vehicul" (cea mai importantă).
+           - Verifică Rubrica 6 "Asigurat/Deținător poliță".
+           - Numele sunt de obicei scrise cu MAJUSCULE.
+           - Transcrie exact ce vezi scris de mână.
 
         3. Serie Șasiu (VIN):
-           - 17 caractere.
+           - Caută un cod de 17 caractere la Rubrica 7 sau în partea de jos a secțiunii.
+           - ATENȚIE: NU confunda cu Numărul de Telefon (care începe cu 07...).
+           - Dacă e un număr de telefon, ignoră-l. Returnează doar VIN-ul real sau null.
 
         4. Asigurator:
-           - Rubrica 8.
+           - Verifică Rubrica 8 "Societate de asigurări".
+           - Extrage numele companiei (ex: GROUPAMA, ALLIANZ, GENERALI, EUROINS, HELLAS DIRECT, etc).
 
         Returnează JSON STRICT cu cheile:
         {{
@@ -239,7 +252,7 @@ class DocumentAnalyzer:
             "nume_sofer_{suffix}": "...",
             "asigurator_{suffix}": "..."
         }}
-        Dacă nu găsești o valoare, pune null sau "".
+        Folosește null sau "" pentru valori lipsă.
         """
 
         try:
