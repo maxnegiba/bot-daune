@@ -7,8 +7,9 @@ import base64
 class DocumentAnalyzerTestCase(SimpleTestCase):
     @patch("apps.claims.services.OpenAI")
     @patch("apps.claims.services.Image")
+    @patch("apps.claims.services.ImageOps")
     @patch("builtins.open", new_callable=MagicMock)
-    def test_analyze_amiabila_split_strategy(self, mock_open, mock_image, mock_openai):
+    def test_analyze_amiabila_split_strategy(self, mock_open, mock_image_ops, mock_image, mock_openai):
         # Setup Mocks
         mock_file = MagicMock()
         mock_file.read.return_value = b"fake_image_bytes"
@@ -17,7 +18,11 @@ class DocumentAnalyzerTestCase(SimpleTestCase):
         # Mock PIL Image
         mock_img_instance = MagicMock()
         mock_img_instance.size = (1000, 2000) # Width, Height
+        mock_img_instance.mode = 'RGB'
         mock_image.open.return_value = mock_img_instance
+
+        # Mock ImageOps.autocontrast to return the same image
+        mock_image_ops.autocontrast.return_value = mock_img_instance
 
         # Mock Crops
         mock_left_crop = MagicMock()
@@ -51,13 +56,17 @@ class DocumentAnalyzerTestCase(SimpleTestCase):
         # 1. Check if Image was opened
         mock_image.open.assert_called_once()
 
+        # Check if autocontrast was called
+        mock_image_ops.autocontrast.assert_called_once_with(mock_img_instance)
+
         # 2. Check if crops were created
-        # Expected crop calls:
-        # Left: (0, 0, 500, 2000)
-        # Right: (500, 0, 1000, 2000)
+        # Expected crop calls with Overlap:
+        # Width = 1000
+        # Left End = 55% = 550 -> (0, 0, 550, 2000)
+        # Right Start = 45% = 450 -> (450, 0, 1000, 2000)
         self.assertEqual(mock_img_instance.crop.call_count, 2)
-        mock_img_instance.crop.assert_any_call((0, 0, 500, 2000))
-        mock_img_instance.crop.assert_any_call((500, 0, 1000, 2000))
+        mock_img_instance.crop.assert_any_call((0, 0, 550, 2000))
+        mock_img_instance.crop.assert_any_call((450, 0, 1000, 2000))
 
         # 3. Check OpenAI call
         mock_client.chat.completions.create.assert_called_once()
