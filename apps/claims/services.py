@@ -79,7 +79,8 @@ class DocumentAnalyzer:
             - Nu amesteca datele între cele două vehicule.
 
             2. NUMERE DE ÎNMATRICULARE (Format Românesc):
-            - Caută tipare de forma: [JJ NN LLL] (ex: AG 22 PAW, DJ 05 XYZ) sau [B NNN LLL] (ex: B 101 ABC).
+            - Valid County Codes (Județe): AB, AG, AR, B, BC, BH, BN, BR, BT, BV, BZ, CJ, CL, CS, CT, CV, DB, DJ, GJ, GL, GR, HD, HR, IF, IL, IS, MH, MM, MS, NT, OT, PH, SB, SJ, SM, SV, TL, TM, TR, VL, VN, VS.
+            - Caută tipare de forma: [JJ NN LLL] (ex: AG 22 PAW, DB 96 MYH) sau [B NNN LLL] (ex: B 101 ABC).
             - Fii atent la confuzia dintre '0' (cifra zero) și 'O' (litera O), sau '1' (cifra unu) și 'I' (litera I). Corectează pe baza contextului (de ex. județul 'DJ' nu 'D1', numărul '05' nu 'O5').
             - Pentru numere străine, copiază exact ce vezi.
 
@@ -87,6 +88,7 @@ class DocumentAnalyzer:
             - De obicei sunt scrise cu MAJUSCULE de mână.
             - Caută la secțiunea 9 "Conducător vehicul" (Nume, Prenume) și secțiunea 6 "Asigurat".
             - Ignoră etichete pre-tipărite. Extrage doar scrisul de mână.
+            - Atenție la litere/nume incomplete (ex: ILIE vs ILE).
 
             4. ANTI-HALUCINAȚII:
             - Dacă un câmp nu este lizibil sau este gol, returnează null sau "".
@@ -180,7 +182,7 @@ class DocumentAnalyzer:
                 img = img.convert('RGB')
 
             # Opțional: Auto-contrast pentru a evidenția scrisul
-            # img = ImageOps.autocontrast(img, cutoff=2)
+            img = ImageOps.autocontrast(img, cutoff=2)
 
             width, height = img.size
             # Tăiem exact la jumătate
@@ -224,17 +226,23 @@ class DocumentAnalyzer:
 
         INSTRUCȚIUNI SPECIFICE OCR:
         1. Numere de Înmatriculare (Format Românesc):
-           - Caută tipare: JJ 00 LLL (ex: AG 22 PAW) sau B 000 LLL.
-           - ATENȚIE: Scrisul de mână poate fi ambiguu.
-             - '0' (zero) vs 'O' (litera O): În numere sunt cifre (ex: 05), în județe litere (ex: OT).
-             - '1' (unu) vs 'I' (litera I): În numere sunt cifre, în județe litere.
-           - Returnează numărul curat, fără spații (ex: AG22PAW).
+           - Valid County Codes (Județe): AB, AG, AR, B, BC, BH, BN, BR, BT, BV, BZ, CJ, CL, CS, CT, CV, DB, DJ, GJ, GL, GR, HD, HR, IF, IL, IS, MH, MM, MS, NT, OT, PH, SB, SJ, SM, SV, TL, TM, TR, VL, VN, VS.
+           - Caută tipare: JJ 00 LLL (ex: AG 22 PAW, DB 96 MYH) sau B 000 LLL (ex: B 101 ABC).
+           - ATENȚIE: Scrisul de mână poate fi ambiguu. Corectează logic:
+             - '0' (zero) vs 'O', 'D', 'Q': În numere sunt cifre (ex: 05, 90), în județe litere (ex: OT, DJ). Județul "Dambovita" este DB, nu OB sau 0B.
+             - '1' (unu) vs 'I', 'L': În numere sunt cifre, în județe litere.
+             - '5' vs 'S': În numere e 5, în litere e S.
+             - '8' vs 'B': Județul B (București) sau cifra 8.
+             - 'Z' vs '2': În numere e 2.
+             - 'M' vs 'N' vs 'H': Fii atent la numărul de picioare al literei.
+           - Returnează numărul curat, fără spații (ex: AG22PAW, DB96MYH).
 
         2. Nume și Prenume:
            - Verifică Rubrica 9 "Conducător vehicul" (cea mai importantă).
            - Verifică Rubrica 6 "Asigurat/Deținător poliță".
            - Numele sunt de obicei scrise cu MAJUSCULE.
-           - Transcrie exact ce vezi scris de mână.
+           - Fii atent la literele finale care pot părea incomplete (ex: "ILIE" vs "ILE", "ION" vs "IO").
+           - Transcrie numele complet, corectând evidentele erori de scriere (ex: dacă pare "ILE" dar e clar "ILIE", scrie "ILIE").
 
         3. Serie Șasiu (VIN):
            - Caută un cod de 17 caractere la Rubrica 7 sau în partea de jos a secțiunii.
