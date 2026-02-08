@@ -2,7 +2,7 @@ import base64
 import json
 import logging
 import io
-from PIL import Image
+from PIL import Image, ImageOps
 from openai import OpenAI
 from django.conf import settings
 
@@ -21,11 +21,25 @@ class DocumentAnalyzer:
 
             # Create PIL Image for splitting
             img = Image.open(io.BytesIO(original_bytes))
+
+            # Apply autocontrast to improve handwriting visibility
+            try:
+                # Convert to RGB if necessary (e.g. for PNGs with transparency) to avoid errors
+                if img.mode == 'RGBA':
+                    img = img.convert('RGB')
+                img = ImageOps.autocontrast(img)
+            except Exception as e:
+                logger.warning(f"Autocontrast failed: {e}")
+
             width, height = img.size
 
-            # Split vertically
-            left_crop = img.crop((0, 0, width // 2, height))
-            right_crop = img.crop((width // 2, 0, width, height))
+            # Split vertically with OVERLAP (Left: 0-55%, Right: 45-100%)
+            # This ensures we don't cut off text in the middle spine
+            split_point_left_end = int(width * 0.55)
+            split_point_right_start = int(width * 0.45)
+
+            left_crop = img.crop((0, 0, split_point_left_end, height))
+            right_crop = img.crop((split_point_right_start, 0, width, height))
 
             # Helper to convert PIL image to base64
             def pil_to_base64(pil_img):
@@ -68,13 +82,16 @@ class DocumentAnalyzer:
            - Nu amesteca datele între cele două vehicule!
 
         2. NUMERE DE ÎNMATRICULARE (Format Românesc):
-           - Format uzual: [JJ NN LLL] (ex: AG 22 PAW, B 101 ABC).
-           - Verifică atent caracterele similare: '0' (cifră) vs 'O' (literă), '1' vs 'I', '8' vs 'B'.
-           - Corectează județele invalide (ex: 'D1' -> 'DJ').
+           - Format uzual: [JJ NN LLL] sau [B NNN LLL] (ex: AG 22 PAW, B 101 ABC).
+           - JUDEȚE VALIDE: B, AB, AR, AG, BC, BH, BN, BR, BT, BV, BZ, CJ, CL, CS, CT, CV, DB, DJ, GJ, GL, GR, HD, HR, IF, IL, IS, MH, MM, MS, NT, OT, PH, SB, SJ, SM, SV, TL, TM, TR, VL, VN, VS.
+           - ATENȚIE: Dacă vezi 'B' dar formatul numărului este [JJ NN LLL] (ex: B 86 MYH), corectează 'B' cu județul valid care seamănă cel mai mult (ex: DB, BZ). 'B' simplu are format [B NNN LLL].
+           - Verifică atent caracterele similare: '0' (cifră) vs 'O' (literă), '1' vs 'I', '8' vs 'B', 'D' vs '0'.
+           - Dacă ești nesigur de un caracter, returnează null pentru tot numărul decât să inventezi.
 
         3. NUME ȘI PRENUME:
-           - Caută la secțiunea 9 "Conducător vehicul" și secțiunea 6 "Asigurat".
-           - Transcrie numele complet, corectând majusculele olografe ilizibile.
+           - PRIORITATE MAXIMĂ: Extrage numele din Rubrica 6 ("Asigurat/Deținător"). Acesta este numele legal al deținătorului.
+           - FALLBACK: Folosește Rubrica 9 ("Conducător vehicul") DOAR DACĂ Rubrica 6 este ilizibilă sau goală.
+           - CORECȚII LOGICE: Corectează numele trunchiate. De exemplu "ILE" -> "ILIE", "GHE" -> "GHEORGHE", "NIC" -> "NICOLAE". Transcrie numele complet.
 
         TIPURI ACCEPTATE (tip_document):
         ["CI", "PERMIS", "TALON", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "ALTELE"]
@@ -85,13 +102,13 @@ class DocumentAnalyzer:
            - Vehicul A (Imaginea 2 - Stânga):
              - 'nr_auto_a': Nr. Înmatriculare (Rubrica 7).
              - 'vin_a': Serie Șasiu (Opțional/Dacă este lizibil).
-             - 'nume_sofer_a': Nume și Prenume (Rubrica 9 sau 6).
+             - 'nume_sofer_a': Numele din Rubrica 6 (Prioritar) sau Rubrica 9.
              - 'asigurator_a': Societatea de asigurări (Rubrica 8).
 
            - Vehicul B (Imaginea 3 - Dreapta):
              - 'nr_auto_b': Nr. Înmatriculare (Rubrica 7).
              - 'vin_b': Serie Șasiu (Opțional/Dacă este lizibil).
-             - 'nume_sofer_b': Nume și Prenume (Rubrica 9 sau 6).
+             - 'nume_sofer_b': Numele din Rubrica 6 (Prioritar) sau Rubrica 9.
              - 'asigurator_b': Societatea de asigurări (Rubrica 8).
 
         2. PENTRU ALTE DOCUMENTE (Folosește Imaginea 1):
@@ -148,8 +165,23 @@ class DocumentAnalyzer:
             )
 
             content = response.choices[0].message.content
-            return json.loads(content)
+            data = json.loads(content)
+            return DocumentAnalyzer._normalize_data(data)
 
         except Exception as e:
             logger.error(f"Eroare OpenAI: {e}")
             return {"tip_document": "UNKNOWN", "date_extrase": {}, "error": str(e)}
+
+    @staticmethod
+    def _normalize_data(data):
+        if not data or "date_extrase" not in data:
+            return data
+
+        extracted = data["date_extrase"]
+
+        # Simple normalization: Uppercase for license plates
+        for key in ["nr_auto_a", "nr_auto_b", "nr_auto"]:
+            if key in extracted and isinstance(extracted[key], str):
+                extracted[key] = extracted[key].upper().strip()
+
+        return data
