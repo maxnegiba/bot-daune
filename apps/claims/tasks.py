@@ -12,6 +12,9 @@ import os
 import requests
 import tempfile
 import shutil
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # --- TASK 1: Procesare Input (Documente & AI) ---
@@ -19,14 +22,14 @@ import shutil
 def analyze_document_task(document_id):
     doc = None
     try:
-        print(f"--- [AI WORKER] Procesez Doc ID: {document_id} cu OpenAI ---")
+        logger.info(f"--- [AI WORKER] Procesez Doc ID: {document_id} cu OpenAI ---")
 
         doc = CaseDocument.objects.get(id=document_id)
         case = doc.case
 
         # 1. Analiza OpenAI
         result = DocumentAnalyzer.analyze(doc.file.path)
-        print(f"🤖 Rezultat AI: {result}")
+        logger.info(f"🤖 Rezultat AI: {result}")
 
         # 2. Salvare date OCR
         # NOTA: Acest save() va declanșa signals.py care populează vehiculele!
@@ -77,7 +80,7 @@ def analyze_document_task(document_id):
         check_status_and_notify(case, processed_doc=doc)
 
     except Exception as e:
-        print(f"--- [AI ERROR] {e} ---")
+        logger.error(f"--- [AI ERROR] {e} ---")
         if doc:
             try:
                 client = get_client(doc.case)
@@ -171,7 +174,7 @@ def send_claim_email_task(case_id):
         case = Case.objects.get(id=case_id)
         client = case.client
 
-        print(f"📧 [EMAIL WORKER] Pregătesc trimiterea pentru dosar {case.id}")
+        logger.info(f"📧 [EMAIL WORKER] Pregătesc trimiterea pentru dosar {case.id}")
 
         # --- PASUL 1: Identificare Asigurator ---
         target_email = "office@autodaune.ro"  # Fallback (default la noi dacă nu găsim)
@@ -190,7 +193,7 @@ def send_claim_email_task(case_id):
         detected_text = ""
         if guilty_vehicle and guilty_vehicle.insurance_company_name:
             detected_text = guilty_vehicle.insurance_company_name.lower()
-            print(f"🔍 Text asigurator detectat de AI: '{detected_text}'")
+            logger.info(f"🔍 Text asigurator detectat de AI: '{detected_text}'")
 
         # Algoritm de Matching cu baza de date 'Insurer'
         if detected_text:
@@ -208,14 +211,14 @@ def send_claim_email_task(case_id):
                         case.insurer_email = insurer.email_claims
                         case.save()
 
-                        print(
+                        logger.info(
                             f"✅ MATCH ASIGURATOR: '{detected_text}' -> {insurer.name} ({target_email})"
                         )
                         break
                 if target_name != "Administrator":
                     break
         else:
-            print("⚠️ Nu am detectat numele asiguratorului. Trimit la fallback.")
+            logger.warning("⚠️ Nu am detectat numele asiguratorului. Trimit la fallback.")
 
         # --- PASUL 2: Construire Email ---
         subject = f"Avizare Dauna Auto - {client.full_name} - Dosar {str(case.id)[:8]}"
@@ -288,7 +291,7 @@ def send_claim_email_task(case_id):
 
                         count += 1
                     except Exception as e:
-                        print(f"⚠️ Eroare atașare {doc.file.name}: {e}")
+                        logger.error(f"⚠️ Eroare atașare {doc.file.name}: {e}")
 
             # --- PASUL 4: Trimitere ---
             email.send()
@@ -299,12 +302,12 @@ def send_claim_email_task(case_id):
                 shutil.rmtree(task_tmp_dir)
 
         # Confirmăm pe consolă
-        print(f"🚀 Email trimis cu succes la {target_email}")
+        logger.info(f"🚀 Email trimis cu succes la {target_email}")
 
         # Notă: Nu schimbăm 'stage' aici, rămâne PROCESSING_INSURER până răspund ei.
 
     except Exception as e:
-        print(f"❌ EROARE CRITICĂ SEND EMAIL: {e}")
+        logger.error(f"❌ EROARE CRITICĂ SEND EMAIL: {e}")
 
 
 # --- TASK 3: Monitorizare Email (IMAP) ---
@@ -323,7 +326,7 @@ def check_email_replies_task():
     IMAP_PASS = os.getenv("IMAP_PASSWORD", os.getenv("EMAIL_HOST_PASSWORD"))
 
     if not IMAP_USER or not IMAP_PASS:
-        print("❌ Lipsă credențiale IMAP")
+        logger.error("❌ Lipsă credențiale IMAP")
         return
 
     try:
@@ -350,7 +353,7 @@ def check_email_replies_task():
                             subject = subject.decode(encoding or "utf-8")
 
                         sender = msg.get("From")
-                        print(f"📧 Mesaj nou: {subject} de la {sender}")
+                        logger.info(f"📧 Mesaj nou: {subject} de la {sender}")
 
                         # 1. Căutăm ID Dosar
                         # Pattern: "Dosar ([a-f0-9]{8})"
@@ -390,7 +393,7 @@ def check_email_replies_task():
                                 recipient = case
 
                                 if is_offer:
-                                    print(f"💰 OFERTA DETECTATA pentru {case.id}")
+                                    logger.info(f"💰 OFERTA DETECTATA pentru {case.id}")
                                     case.stage = Case.Stage.OFFER_DECISION
 
                                     # Încercăm să extragem suma (simplistic)
@@ -412,7 +415,7 @@ def check_email_replies_task():
                                     )
                                 else:
                                     # Forwardăm mesajul către client (Relay)
-                                    print(f"ℹ️ Mesaj info pentru {case.id} -> Forward WhatsApp")
+                                    logger.info(f"ℹ️ Mesaj info pentru {case.id} -> Forward WhatsApp")
                                     msg_forward = (
                                         f"📩 Mesaj nou de la asigurator:\n\n{body[:800]}...\n\n"
                                         "👉 Răspunde aici (text sau poze) și voi trimite răspunsul tău direct la asigurator."
@@ -420,13 +423,13 @@ def check_email_replies_task():
                                     client.send_text(recipient, msg_forward)
 
             except Exception as e_inner:
-                print(f"Eroare procesare email {num}: {e_inner}")
+                logger.error(f"Eroare procesare email {num}: {e_inner}")
 
         mail.close()
         mail.logout()
 
     except Exception as e:
-        print(f"Eroare IMAP: {e}")
+        logger.error(f"Eroare IMAP: {e}")
 
 
 # --- TASK 4: Email de Acceptare Oferta ---
@@ -435,7 +438,7 @@ def send_offer_acceptance_email_task(case_id):
     try:
         case = Case.objects.get(id=case_id)
         if not case.insurer_email:
-            print("⚠️ Nu am emailul asiguratorului salvat.")
+            logger.warning("⚠️ Nu am emailul asiguratorului salvat.")
             return
 
         subject = f"Acceptare Oferta - Dosar {str(case.id)[:8]} - {case.client.full_name}"
@@ -478,10 +481,10 @@ def send_offer_acceptance_email_task(case_id):
             cc=["office@autodaune.ro"]
         )
         email.send()
-        print(f"✅ Email acceptare trimis pentru dosar {case.id}")
+        logger.info(f"✅ Email acceptare trimis pentru dosar {case.id}")
 
     except Exception as e:
-        print(f"Eroare email acceptare: {e}")
+        logger.error(f"Eroare email acceptare: {e}")
 
 # --- TASK 5: Email Schimbare Optiune ---
 @shared_task
@@ -514,10 +517,10 @@ def send_option_change_email_task(case_id, new_option_label):
             cc=["office@autodaune.ro"]
         )
         email.send()
-        print(f"✅ Email schimbare optiune trimis pentru dosar {case.id}")
+        logger.info(f"✅ Email schimbare optiune trimis pentru dosar {case.id}")
 
     except Exception as e:
-        print(f"Eroare email schimbare optiune: {e}")
+        logger.error(f"Eroare email schimbare optiune: {e}")
 
 
 # --- TASK 6: Relay WhatsApp -> Email ---
@@ -528,7 +531,7 @@ def relay_message_to_insurer_task(case_id, message_text, media_urls=None):
         if not case.insurer_email:
             return
 
-        print(f"📧 [RELAY] Trimit reply la asigurator pentru dosar {case.id}")
+        logger.info(f"📧 [RELAY] Trimit reply la asigurator pentru dosar {case.id}")
 
         subject = f"Re: Avizare Dauna Auto - {case.client.full_name} - Dosar {str(case.id)[:8]}"
 
@@ -586,7 +589,7 @@ def relay_message_to_insurer_task(case_id, message_text, media_urls=None):
                         temp_files_to_cleanup.append(tmp_path)
 
                 except Exception as e:
-                    print(f"⚠️ Eroare download relay {url}: {e}")
+                    logger.error(f"⚠️ Eroare download relay {url}: {e}")
 
         try:
             email.send()
@@ -597,7 +600,7 @@ def relay_message_to_insurer_task(case_id, message_text, media_urls=None):
                         os.remove(p)
                 except:
                     pass
-        print(f"✅ Email relay trimis!")
+        logger.info(f"✅ Email relay trimis!")
 
     except Exception as e:
-        print(f"Eroare relay email: {e}")
+        logger.error(f"Eroare relay email: {e}")

@@ -79,18 +79,29 @@ Aplicația monitorizează inbox-ul (`office@autodaune.ro`) pentru a detecta răs
 
 Trebuie să folosești setările furnizorului tău de hosting/email (ex: Ionos, Gmail, Zoho, cPanel).
 
-### A. Obținere Date IMAP
-Caută în documentația providerului tău (ex: Ionos):
-*   **IMAP Host**: ex. `imap.ionos.com`
-*   **Port**: 993 (SSL)
-*   **User/Pass**: Adresa ta de email și parola ei.
+### A. Obținere Date IMAP (Exemplu: Ionos)
+
+Dacă folosești un VPS Ionos cu serviciul de email inclus, setările sunt standard:
+
+*   **IMAP Host**: `imap.ionos.com` (valabil și pentru .de, .co.uk, etc.)
+*   **Port**: `993` (SSL/TLS)
+*   **Username**: Adresa completă de email (ex: `office@autodaune.ro`)
+*   **Password**: Parola setată pentru acea căsuță de email.
+
+⚠️ **Important:** Parola de email poate fi diferită de parola contului de client Ionos. Verifică în *Email & Office > Email settings* din panoul Ionos.
+
+Poți testa conexiunea de pe serverul VPS rulând:
+```bash
+openssl s_client -crlf -connect imap.ionos.com:993
+```
+Dacă primești `* OK IMAP4 ready`, serverul răspunde corect.
 
 ### B. Configurare `.env` (IMAP)
 Deoarece folosim SendGrid pentru trimitere, credențialele SMTP diferă de cele IMAP.
 Adaugă aceste variabile dedicate în `.env`:
 
 ```ini
-# --- Configurare IMAP (Primire) ---
+# --- Configurare IMAP (Primire - Ionos) ---
 IMAP_HOST=imap.ionos.com
 IMAP_USER=office@autodaune.ro
 IMAP_PASSWORD=<parola-reala-a-contului-email>

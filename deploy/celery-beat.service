@@ -1,0 +1,14 @@
+[Unit]
+Description=Celery Beat Service for Auto Claims Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=www-data
+WorkingDirectory=/var/www/autodaune
+ExecStart=/var/www/autodaune/venv/bin/celery -A config beat --loglevel=INFO --logfile=/var/log/celery-beat.log
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
