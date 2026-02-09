@@ -142,11 +142,14 @@ sudo nginx -t
 sudo systemctl restart nginx
 ```
 
-## 8. Configurare Celery (Worker)
+## 8. Configurare Celery (Worker & Beat)
 
-Este recomandat să rulezi Celery ca un serviciu systemd separat (similar cu Gunicorn) pentru a procesa task-urile asincrone (PDF-uri, email-uri).
+Celery are nevoie de două servicii:
+1. **Worker**: Procesează task-urile (PDF, Email).
+2. **Beat**: Planifică task-urile periodice (Verificare Email la 5 minute).
 
-Exemplu `/etc/systemd/system/celery.service`:
+### A. Worker Service
+Salvează fișierul `/etc/systemd/system/celery.service`:
 
 ```ini
 [Unit]
@@ -164,6 +167,39 @@ Restart=always
 
 [Install]
 WantedBy=multi-user.target
+```
+
+### B. Beat Service (Scheduler)
+Copiază `deploy/celery-beat.service` în `/etc/systemd/system/`:
+
+```bash
+sudo cp deploy/celery-beat.service /etc/systemd/system/
+```
+
+### C. Configurare Logs
+Asigură-te că directoarele de log există și au permisiuni corecte:
+
+```bash
+# Pentru Celery System Logs
+sudo touch /var/log/celery.log /var/log/celery-beat.log
+sudo chown root:www-data /var/log/celery.log /var/log/celery-beat.log
+
+# Pentru Aplicație (Email Logs - definite în settings.py)
+mkdir -p /var/www/autodaune/logs
+sudo chown -R root:www-data /var/www/autodaune/logs
+sudo chmod -R 775 /var/www/autodaune/logs
+```
+
+### D. Start Services
+
+```bash
+sudo systemctl daemon-reload
+# Pornire Worker
+sudo systemctl start celery
+sudo systemctl enable celery
+# Pornire Beat (Scheduler)
+sudo systemctl start celery-beat
+sudo systemctl enable celery-beat
 ```
 
 ## 9. HTTPS (SSL)
