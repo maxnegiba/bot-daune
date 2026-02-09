@@ -9,8 +9,12 @@ class FlowManagerTestCase(TestCase):
         self.case = Case.objects.create(client=self.client, stage=Case.Stage.GREETING)
         self.manager = FlowManager(self.case, "123")
 
-    @patch("apps.bot.flow.wa")
-    def test_greeting_yes(self, mock_wa):
+    @patch("apps.bot.flow.WhatsAppClient")
+    def test_greeting_yes(self, mock_wa_cls):
+        # Create a new manager to use the mocked client
+        self.manager = FlowManager(self.case, "123")
+        mock_wa = self.manager.client
+
         # 1. User says "da"
         self.manager.process_message("text", "da, deschide")
 
@@ -22,8 +26,11 @@ class FlowManagerTestCase(TestCase):
         self.assertTrue(mock_wa.send_text.called)
         self.assertTrue(mock_wa.send_buttons.called)
 
-    @patch("apps.bot.flow.wa")
-    def test_greeting_no(self, mock_wa):
+    @patch("apps.bot.flow.WhatsAppClient")
+    def test_greeting_no(self, mock_wa_cls):
+        self.manager = FlowManager(self.case, "123")
+        mock_wa = self.manager.client
+
         # 1. User says "nu"
         self.manager.process_message("text", "nu, alta")
 
@@ -32,10 +39,13 @@ class FlowManagerTestCase(TestCase):
         self.assertTrue(self.case.is_human_managed)
 
         # Should send text confirmation
-        mock_wa.send_text.assert_called_with("123", "Am înțeles. Un operator uman a fost notificat și te va contacta în curând.")
+        mock_wa.send_text.assert_called_with(self.case, "Am înțeles. Un operator uman a fost notificat și te va contacta în curând.")
 
-    @patch("apps.bot.flow.wa")
-    def test_collecting_docs_resolution(self, mock_wa):
+    @patch("apps.bot.flow.WhatsAppClient")
+    def test_collecting_docs_resolution(self, mock_wa_cls):
+        self.manager = FlowManager(self.case, "123")
+        mock_wa = self.manager.client
+
         # Setup case in COLLECTING_DOCS
         self.case.stage = Case.Stage.COLLECTING_DOCS
         self.case.save()
@@ -47,8 +57,11 @@ class FlowManagerTestCase(TestCase):
         self.assertEqual(self.case.resolution_choice, Case.Resolution.OWN_REGIME)
         mock_wa.send_text.assert_called()
 
-    @patch("apps.bot.flow.wa")
-    def test_collecting_docs_service_rar(self, mock_wa):
+    @patch("apps.bot.flow.WhatsAppClient")
+    def test_collecting_docs_service_rar(self, mock_wa_cls):
+        self.manager = FlowManager(self.case, "123")
+        mock_wa = self.manager.client
+
         # Setup case in COLLECTING_DOCS
         self.case.stage = Case.Stage.COLLECTING_DOCS
         self.case.save()
@@ -62,8 +75,11 @@ class FlowManagerTestCase(TestCase):
         mock_wa.send_text.assert_called()
 
     @patch("apps.bot.flow.analyze_document_task")
-    @patch("apps.bot.flow.wa")
-    def test_image_upload(self, mock_wa, mock_task):
+    @patch("apps.bot.flow.WhatsAppClient")
+    def test_image_upload(self, mock_wa_cls, mock_task):
+        self.manager = FlowManager(self.case, "123")
+        mock_wa = self.manager.client
+
         self.case.stage = Case.Stage.COLLECTING_DOCS
         self.case.save()
 

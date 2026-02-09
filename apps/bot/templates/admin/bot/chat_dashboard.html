@@ -1,0 +1,338 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}Chat Centralizat{% endblock %}
+
+{% block content %}
+<div class="flex h-[calc(100vh-100px)] w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden shadow-sm">
+
+    <!-- Sidebar: Conversation List -->
+    <div class="w-1/3 md:w-1/4 min-w-[300px] border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+            <h2 class="text-sm font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wide">
+                Inbox Clienți
+            </h2>
+        </div>
+
+        <div id="conversation-list" class="flex-1 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
+            <!-- Items injected by JS -->
+            <div class="p-8 text-center text-gray-400 animate-pulse">
+                Se încarcă lista...
+            </div>
+        </div>
+    </div>
+
+    <!-- Main: Chat Window -->
+    <div class="flex-1 flex flex-col bg-white dark:bg-gray-900 relative">
+
+        <!-- Header -->
+        <div id="chat-header" class="h-16 px-6 flex items-center justify-between bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm hidden">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center text-primary-600 dark:text-primary-300 font-bold text-lg">
+                    <span id="header-avatar">?</span>
+                </div>
+                <div>
+                    <h3 id="header-client-name" class="font-semibold text-gray-900 dark:text-white text-base leading-tight">
+                        Selectează un client
+                    </h3>
+                    <p id="header-details" class="text-xs text-gray-500 dark:text-gray-400">
+                        ...
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <span id="header-bot-status" class="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-600 border border-gray-200">
+                    STATUS
+                </span>
+                <a id="header-case-link" href="#" target="_blank" class="text-primary-600 hover:text-primary-700 text-sm font-medium hover:underline">
+                    Vezi Dosar ↗
+                </a>
+            </div>
+        </div>
+
+        <!-- Messages Area -->
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50 dark:bg-gray-900 scroll-smooth">
+            <div class="flex flex-col items-center justify-center h-full text-gray-400 space-y-4">
+                <svg class="w-16 h-16 text-gray-300 dark:text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                </svg>
+                <p>Selectează o conversație din stânga pentru a începe.</p>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div id="chat-input-area" class="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 hidden">
+            <form id="chat-form" class="flex gap-3 items-end">
+                <div class="flex-1 relative">
+                    <textarea id="message-input" rows="1" class="w-full rounded-lg border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-4 py-3 focus:ring-primary-500 focus:border-primary-500 resize-none shadow-sm text-sm" placeholder="Scrie un mesaj..." autocomplete="off"></textarea>
+                </div>
+                <button type="submit" class="bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-medium transition-all shadow-sm hover:shadow-md flex items-center justify-center">
+                    <span id="send-btn-text">Trimite</span>
+                    <svg id="send-btn-icon" class="w-4 h-4 ml-2 transform rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                    </svg>
+                </button>
+            </form>
+            <div class="text-xs text-gray-400 mt-2 flex justify-between">
+                <span>* Trimiterea unui mesaj va opri automat botul pentru acest dosar.</span>
+                <span id="typing-indicator" class="hidden text-primary-500 font-medium">Se trimite...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        let currentCaseId = null;
+        let lastMsgId = 0;
+        let convInterval = null;
+        let msgInterval = null;
+
+        const chatMessages = document.getElementById('chat-messages');
+        const msgInput = document.getElementById('message-input');
+
+        // --- 1. Polling Conversations ---
+        async function fetchConversations() {
+            try {
+                const res = await fetch("{% url 'admin_api_conversations' %}");
+                if (!res.ok) return;
+                const data = await res.json();
+                renderConversations(data.conversations);
+            } catch (e) {
+                console.error("Error fetching conversations:", e);
+            }
+        }
+
+        function renderConversations(list) {
+            const container = document.getElementById('conversation-list');
+            // Optimisation: Don't redraw if nothing changed?
+            // For now, simple redraw to keep it synced. To improve UX, maybe check content.
+            // But full redraw resets scroll. We should be careful.
+
+            // Minimal Virtual DOM Logic: Only update if list length or content differs
+            // Actually, simplest is to just build HTML string and replace innerHTML ONLY if different.
+
+            let html = "";
+            if (list.length === 0) {
+                html = `<div class="p-8 text-center text-gray-400 text-sm">Nu există conversații active.</div>`;
+            } else {
+                list.forEach(c => {
+                    const isActive = (c.id === currentCaseId);
+                    const activeClass = isActive ? "bg-primary-50 dark:bg-primary-900/20 border-l-4 border-primary-600" : "hover:bg-gray-50 dark:hover:bg-gray-800 border-l-4 border-transparent";
+                    const unreadBadge = c.needs_reply ? `<span class="w-2.5 h-2.5 bg-red-500 rounded-full ml-2" title="Mesaj nou de la client"></span>` : "";
+
+                    html += `
+                    <div onclick="selectConversation('${c.id}')" class="cursor-pointer p-4 transition-all duration-150 border-b border-gray-100 dark:border-gray-700 ${activeClass}">
+                        <div class="flex justify-between items-start mb-1">
+                            <h4 class="font-semibold text-gray-900 dark:text-gray-100 text-sm truncate pr-2 flex items-center">
+                                ${c.client_name}
+                                ${unreadBadge}
+                            </h4>
+                            <span class="text-xs text-gray-400 whitespace-nowrap">${c.last_time}</span>
+                        </div>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 truncate mb-1.5 h-4">
+                            ${c.last_message || '<span class="italic text-gray-300">Fără mesaje</span>'}
+                        </p>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-gray-500 uppercase font-medium">
+                                ${c.stage}
+                            </span>
+                            ${c.is_human ?
+                                '<span class="text-[10px] text-orange-600 font-bold bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100">UMAN</span>' :
+                                '<span class="text-[10px] text-green-600 font-bold bg-green-50 px-1.5 py-0.5 rounded border border-green-100">BOT</span>'
+                            }
+                        </div>
+                    </div>
+                    `;
+                });
+            }
+
+            // Replace only if changed to avoid flicker (hashing would be better but simple string compare is ok for small lists)
+            if (container.innerHTML !== html) {
+                // If user is scrolling sidebar, replacing HTML might annoy them.
+                // But usually sidebar is static.
+                container.innerHTML = html;
+            }
+        }
+
+        // --- 2. Select Conversation ---
+        window.selectConversation = async function(caseId) {
+            if (currentCaseId === caseId) return; // Already selected
+
+            currentCaseId = caseId;
+            lastMsgId = 0;
+
+            // UI Update
+            document.getElementById('chat-header').classList.remove('hidden');
+            document.getElementById('chat-input-area').classList.remove('hidden');
+            chatMessages.innerHTML = `<div class="flex justify-center items-center h-full"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>`;
+
+            // Fetch Messages immediately
+            await fetchMessages(true);
+
+            // Start Polling Messages
+            if (msgInterval) clearInterval(msgInterval);
+            msgInterval = setInterval(() => fetchMessages(false), 1000);
+
+            // Focus Input
+            msgInput.focus();
+        };
+
+        // --- 3. Polling Messages ---
+        async function fetchMessages(fullReload = false) {
+            if (!currentCaseId) return;
+
+            try {
+                const url = `/bot/admin/api/messages/${currentCaseId}/?after_id=${fullReload ? 0 : lastMsgId}`;
+                const res = await fetch(url);
+                if (!res.ok) return;
+
+                const data = await res.json();
+
+                // Update Header Info
+                if (fullReload) {
+                    document.getElementById('header-client-name').innerText = data.client_name;
+                    document.getElementById('header-avatar').innerText = data.client_name.charAt(0).toUpperCase();
+                    document.getElementById('header-case-link').href = `/admin/claims/case/${data.case_id}/change/`;
+
+                    // Clear loading spinner
+                    chatMessages.innerHTML = '';
+                }
+
+                if (data.messages && data.messages.length > 0) {
+                    renderMessages(data.messages);
+                }
+            } catch (e) {
+                console.error("Error fetching messages:", e);
+            }
+        }
+
+        function renderMessages(messages) {
+            let scroll = false;
+
+            messages.forEach(msg => {
+                if (msg.id > lastMsgId) {
+                    lastMsgId = msg.id;
+                    appendMessage(msg);
+                    scroll = true;
+                }
+            });
+
+            if (scroll) {
+                scrollToBottom();
+            }
+        }
+
+        function appendMessage(msg) {
+            const isMe = (msg.direction === 'OUT'); // Admin sent it
+
+            const div = document.createElement('div');
+            div.className = `flex w-full ${isMe ? 'justify-end' : 'justify-start'}`;
+
+            // Styling
+            const bubbleClass = isMe
+                ? 'bg-primary-600 text-white rounded-br-none'
+                : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-bl-none shadow-sm';
+
+            const timeClass = isMe ? 'text-primary-100' : 'text-gray-400';
+
+            let content = msg.content || "";
+            // Newlines to BR
+            content = content.replace(/\n/g, '<br>');
+
+            div.innerHTML = `
+                <div class="max-w-[75%] flex flex-col ${isMe ? 'items-end' : 'items-start'}">
+                    <div class="px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${bubbleClass}">
+                        ${content}
+                    </div>
+                    <span class="text-[10px] mt-1 px-1 ${timeClass}">
+                        ${msg.timestamp}
+                        ${msg.channel === 'WHATSAPP' ? '• WhatsApp' : ''}
+                    </span>
+                </div>
+            `;
+
+            chatMessages.appendChild(div);
+        }
+
+        function scrollToBottom() {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // --- 4. Sending Messages ---
+        document.getElementById('chat-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const text = msgInput.value.trim();
+            if (!text || !currentCaseId) return;
+
+            // UI Optimistic Update (Optional, but let's wait for server for simplicity)
+            msgInput.value = '';
+            msgInput.style.height = 'auto'; // Reset height
+
+            try {
+                const res = await fetch(`/bot/admin/api/send/${currentCaseId}/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({ message: text })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    // Append immediately
+                    if (data.message.id > lastMsgId) {
+                         lastMsgId = data.message.id;
+                         appendMessage(data.message);
+                         scrollToBottom();
+                    }
+                    // Refresh conversations list to update "last message" snippet
+                    fetchConversations();
+                } else {
+                    alert("Eroare la trimitere.");
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Eroare conexiune.");
+            }
+        });
+
+        // Auto-resize textarea
+        msgInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+            if (this.value === '') this.style.height = 'auto';
+        });
+
+        // Enter to send (Shift+Enter for new line)
+        msgInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                document.getElementById('chat-form').dispatchEvent(new Event('submit'));
+            }
+        });
+
+        // Start Sidebar Polling
+        fetchConversations();
+        convInterval = setInterval(fetchConversations, 3000); // Every 3s update list
+
+        // Helper: CSRF
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+    });
+</script>
+{% endblock %}
