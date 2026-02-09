@@ -236,6 +236,11 @@ UNFOLD = {
                         "icon": "dashboard",
                         "link": reverse_lazy("admin:index"),
                     },
+                    {
+                        "title": "Chat Live / Inbox",
+                        "icon": "chat_bubble",
+                        "link": reverse_lazy("admin_chat_dashboard"),
+                    },
                 ],
             },
             {
