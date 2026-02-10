@@ -16,8 +16,8 @@ from .models import (
 
 @admin.register(Client)
 class ClientAdmin(ModelAdmin):
-    list_display = ("phone_number", "full_name", "cnp", "created_at")
-    search_fields = ("phone_number", "full_name", "cnp")
+    list_display = ("phone_number", "first_name", "last_name", "cnp", "created_at")
+    search_fields = ("phone_number", "first_name", "last_name", "cnp")
 
 
 class InvolvedVehicleInline(TabularInline):
@@ -60,7 +60,7 @@ class CaseAdmin(ModelAdmin):
 
     list_filter = ("is_human_managed", "stage", "resolution_choice")
     list_filter_submit = True  # Buton de filtrare dedicat
-    search_fields = ("client__phone_number", "client__full_name", "id")
+    search_fields = ("client__phone_number", "client__first_name", "client__last_name", "id")
 
     # Adăugăm Inline-ul de Loguri pentru a vedea chat-ul direct în dosar
     inlines = [InvolvedVehicleInline, CaseDocumentInline, CommunicationLogInline]

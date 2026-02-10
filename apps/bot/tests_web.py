@@ -8,13 +8,20 @@ class WebChatTestCase(TestCase):
     def setUp(self):
         self.c = TestClient()
         self.phone = "0799999999"
-        self.name = "Web User"
+        self.first_name = "Web"
+        self.last_name = "User"
+        self.plate_number = "B123TST"
 
     def test_full_flow(self):
         # 1. Login
         resp = self.c.post(
             '/bot/chat/login/',
-            data=json.dumps({"phone": self.phone, "name": self.name}),
+            data=json.dumps({
+                "phone": self.phone,
+                "first_name": self.first_name,
+                "last_name": self.last_name,
+                "plate_number": self.plate_number
+            }),
             content_type="application/json"
         )
         self.assertEqual(resp.status_code, 200)
@@ -76,7 +83,12 @@ class WebChatTestCase(TestCase):
         # Login first to establish session
         resp = self.c.post(
             '/bot/chat/login/',
-            data=json.dumps({"phone": self.phone, "name": self.name}),
+            data=json.dumps({
+                "phone": self.phone,
+                "first_name": self.first_name,
+                "last_name": self.last_name,
+                "plate_number": self.plate_number
+            }),
             content_type="application/json"
         )
         self.assertEqual(resp.status_code, 200)
@@ -132,7 +144,12 @@ class WebChatTestCase(TestCase):
         # 1. Login
         resp = self.c.post(
             '/bot/chat/login/',
-            data=json.dumps({"phone": self.phone, "name": self.name}),
+            data=json.dumps({
+                "phone": self.phone,
+                "first_name": self.first_name,
+                "last_name": self.last_name,
+                "plate_number": self.plate_number
+            }),
             content_type="application/json"
         )
         self.assertEqual(resp.status_code, 200)

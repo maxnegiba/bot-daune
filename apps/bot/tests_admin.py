@@ -11,7 +11,7 @@ class AdminChatTestCase(TestCase):
         self.client.force_login(self.admin_user)
 
         # Create Client & Case
-        self.c_model = ClientModel.objects.create(phone_number="0700000000", full_name="Test Client")
+        self.c_model = ClientModel.objects.create(phone_number="0700000000", first_name="Test", last_name="Client")
         self.case = Case.objects.create(client=self.c_model, stage=Case.Stage.GREETING)
 
         # Create some logs

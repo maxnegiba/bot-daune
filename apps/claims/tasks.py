@@ -42,7 +42,18 @@ def analyze_document_task(document_id):
             date = result.get("date_extrase", {})
             if date.get("cnp"):
                 case.client.cnp = date.get("cnp")
-                case.client.full_name = date.get("nume")
+
+                raw_name = date.get("nume", "").strip()
+                if raw_name:
+                    # Încercăm o separare simplă (primul cuvânt = Nume, restul = Prenume)
+                    # De obicei pe CI e Numele primul.
+                    parts = raw_name.split()
+                    if len(parts) >= 2:
+                        case.client.last_name = parts[0]
+                        case.client.first_name = " ".join(parts[1:])
+                    else:
+                        case.client.last_name = raw_name
+
                 case.client.save()
 
         elif "TALON" in tip_ai:

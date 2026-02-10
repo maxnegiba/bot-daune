@@ -9,7 +9,8 @@ class Client(models.Model):
     phone_number = models.CharField(
         max_length=20, unique=True, help_text="Format: +407..."
     )
-    full_name = models.CharField(max_length=150, blank=True, null=True)
+    first_name = models.CharField(max_length=100, blank=True, null=True)
+    last_name = models.CharField(max_length=100, blank=True, null=True)
     cnp = models.CharField(max_length=13, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     iban = models.CharField(
@@ -17,6 +18,11 @@ class Client(models.Model):
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def full_name(self):
+        parts = [p for p in [self.first_name, self.last_name] if p]
+        return " ".join(parts)
 
     def __str__(self):
         return f"{self.phone_number} - {self.full_name or 'Client Nou'}"
