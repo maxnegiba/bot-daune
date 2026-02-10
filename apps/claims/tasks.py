@@ -35,57 +35,83 @@ def analyze_document_task(document_id):
         # Mapăm tipul primit de la AI la Enum-ul din Django
         tip_ai = result.get("tip_document", "").upper()
 
+        # Folosim update() atomic pentru a evita Race Condition pe flag-uri
+        updates = {}
+
         if "CI" in tip_ai or "BULETIN" in tip_ai:
             doc.doc_type = CaseDocument.DocType.ID_CARD
-            case.has_id_card = True
+            updates["has_id_card"] = True
+
             # Optional: Salvăm CNP pe client
             date = result.get("date_extrase", {})
             if date.get("cnp"):
+                # Refresh client before save just in case
+                case.client.refresh_from_db()
                 case.client.cnp = date.get("cnp")
 
                 raw_name = date.get("nume", "").strip()
                 if raw_name:
                     # Încercăm o separare simplă (primul cuvânt = Nume, restul = Prenume)
-                    # De obicei pe CI e Numele primul.
                     parts = raw_name.split()
                     if len(parts) >= 2:
                         case.client.last_name = parts[0]
                         case.client.first_name = " ".join(parts[1:])
                     else:
                         case.client.last_name = raw_name
-
                 case.client.save()
 
         elif "TALON" in tip_ai:
             doc.doc_type = CaseDocument.DocType.CAR_REGISTRATION
-            case.has_car_coupon = True
+            updates["has_car_coupon"] = True
 
         elif "AMIABILA" in tip_ai or "CONSTATARE" in tip_ai:
             doc.doc_type = CaseDocument.DocType.ACCIDENT_REPORT
-            case.has_accident_report = True
+            updates["has_accident_report"] = True
 
         elif "PROCURA" in tip_ai:
             doc.doc_type = CaseDocument.DocType.MANDATE_UNSIGNED
 
         elif "EXTRAS" in tip_ai:
             doc.doc_type = CaseDocument.DocType.BANK_STATEMENT
-            case.has_bank_statement = True
+            updates["has_bank_statement"] = True
             # Optional: Save IBAN
             iban = result.get("date_extrase", {}).get("iban")
             if iban:
+                case.client.refresh_from_db()
                 case.client.iban = iban
                 case.client.save()
 
         elif "ACTE_VINOVAT" in tip_ai:
             doc.doc_type = CaseDocument.DocType.GUILTY_PARTY_DOCS
-            case.has_guilty_docs = True
+            updates["has_guilty_docs"] = True
 
-        # Salvăm documentul și dosarul (Flags updated)
+        # Salvăm documentul (local changes to doc instance)
         doc.save()
-        case.save()
 
-        # 3. Verificare Flux și Notificare
-        check_status_and_notify(case, processed_doc=doc)
+        # Aplicăm update-urile atomice pe Case
+        if updates:
+            Case.objects.filter(pk=case.pk).update(**updates)
+
+        # 3. Verificare Flux și Notificare (Consolidată)
+        # Verificăm dacă mai sunt alte documente în procesare pentru acest dosar
+        from django.utils import timezone
+        import datetime
+
+        recent_threshold = timezone.now() - datetime.timedelta(minutes=5)
+
+        # Numărăm documentele pending (excluzând cel curent, deși el e deja salvat cu ocr_data deci nu mai e pending)
+        # Atenție: JSONField gol poate fi 'null' sau '{}'. FlowManager pune '{}'.
+        pending_count = CaseDocument.objects.filter(
+            case=case,
+            uploaded_at__gte=recent_threshold,
+            ocr_data__exact={}
+        ).exclude(id=doc.id).count()
+
+        if pending_count == 0:
+            # Suntem ultimul task din "lot". Notificăm.
+            check_status_and_notify(case)
+        else:
+            print(f"⏳ Încă {pending_count} documente în procesare. Aștept.")
 
     except Exception as e:
         print(f"--- [AI ERROR] {e} ---")
@@ -112,15 +138,50 @@ def check_status_and_notify(case, processed_doc=None):
     """
     Verifică ce documente lipsesc și notifică clientul pe WhatsApp/Web.
     """
+    # 0. Refresh Case pentru a vedea flag-urile actualizate de alte task-uri
+    try:
+        case.refresh_from_db()
+    except Exception:
+        pass
+
     # Dacă dosarul este pe mod manual (ex: Service RAR), nu trimitem notificări automate
     if case.is_human_managed:
         return
 
     client = get_client(case)
-    # Pentru WebChatClient, phone_number nu e folosit daca pasam case, dar il pastram pentru WhatsAppClient
-    recipient = case  # Folosim obiectul Case pentru a suporta ambele canale
+    recipient = case
 
-    # Lista de verificare
+    # 1. Identificare Documente Procesate Recent (Lotul curent)
+    # Căutăm documente procesate (cu ocr_data) în ultimele 5 minute
+    from django.utils import timezone
+    import datetime
+
+    # Folosim uploaded_at ca proxy pentru "batch"
+    recent_threshold = timezone.now() - datetime.timedelta(minutes=5)
+
+    # Excludem documentele vechi care au fost deja validate in trecut
+    recent_docs = CaseDocument.objects.filter(
+        case=case,
+        uploaded_at__gte=recent_threshold
+    ).exclude(ocr_data__exact={})
+
+    # Construim lista de documente validate și erori
+    validated_names = []
+    error_messages = []
+
+    for d in recent_docs:
+        # Verificăm dacă e un tip valid sau Unknown
+        if d.doc_type == CaseDocument.DocType.UNKNOWN:
+             # E posibil să fie un document nerelevant sau eroare AI
+             fname = os.path.basename(d.file.name)
+             error_messages.append(f"⚠️ Nu am putut identifica documentul '{fname}'. Te rog încarcă doar: Buletin, Talon, Amiabilă sau Video.")
+        else:
+             validated_names.append(d.get_doc_type_display())
+
+    # De-duplicate names
+    validated_names = sorted(list(set(validated_names)))
+
+    # 2. Lista de verificare (Ce mai lipsește?)
     missing = []
     if not case.has_id_card:
         missing.append("Buletin (obligatoriu)")
@@ -140,12 +201,10 @@ def check_status_and_notify(case, processed_doc=None):
     if case.stage == Case.Stage.COLLECTING_DOCS:
         if not missing:
             # TOTUL E COMPLET (DOCUMENTE)
-            # Dacă rezoluția este deja aleasă, trecem direct la Mandat
             if case.resolution_choice != Case.Resolution.UNDECIDED:
                  case.stage = Case.Stage.SIGNING_MANDATE
                  case.save()
 
-                 # Trimitem link semnare
                  domain = settings.APP_DOMAIN
                  link = f"{domain}/mandat/semneaza/{case.id}/"
                  msg = (
@@ -154,20 +213,29 @@ def check_status_and_notify(case, processed_doc=None):
                  )
                  client.send_text(recipient, msg)
             else:
-                # Nu avem rezoluția, întrebăm din nou. Nu schimbăm stadiul încă.
                 client.send_buttons(
                     recipient,
                     "✅ Am primit toate documentele necesare! Cum dorești să soluționezi dosarul?",
                     ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"],
                 )
         else:
-            # Încă lipsesc acte
-            doc_obj = processed_doc or case.documents.last()
-            doc_name = doc_obj.get_doc_type_display() if doc_obj else "Documentul"
-            msg = f"👍 Am validat {doc_name}.\nMai am nevoie de:\n- " + "\n- ".join(
-                missing
-            )
-            client.send_text(recipient, msg)
+            # Încă lipsesc acte. Construim mesajul consolidat.
+            parts = []
+
+            # A. Validari (Dacă avem ceva validat recent)
+            if validated_names:
+                doc_list_str = ", ".join(validated_names)
+                parts.append(f"👍 Am validat: {doc_list_str}.")
+
+            # B. Erori
+            if error_messages:
+                parts.extend(error_messages)
+
+            # C. Missing
+            parts.append("Mai am nevoie de:\n- " + "\n- ".join(missing))
+
+            full_msg = "\n".join(parts)
+            client.send_text(recipient, full_msg)
 
 
 # --- TASK 2: Procesare Output (Trimitere Email Asigurator) ---
