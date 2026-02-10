@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.db.models import Q
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
@@ -18,6 +19,21 @@ from .models import (
 class ClientAdmin(ModelAdmin):
     list_display = ("phone_number", "first_name", "last_name", "cnp", "created_at")
     search_fields = ("phone_number", "first_name", "last_name", "cnp")
+
+    def get_search_results(self, request, queryset, search_term):
+        result_qs, use_distinct = super().get_search_results(request, queryset, search_term)
+
+        if search_term:
+            # Custom search for Victim License Plate
+            # Căutăm doar în vehiculele cu rol de VICTIMĂ (așa cum a cerut utilizatorul)
+            victim_plate_q = Q(cases__vehicles__role=InvolvedVehicle.Role.VICTIM) & Q(
+                cases__vehicles__license_plate__icontains=search_term
+            )
+            custom_qs = queryset.filter(victim_plate_q)
+            result_qs = result_qs | custom_qs
+            return result_qs.distinct(), use_distinct
+
+        return result_qs, use_distinct
 
 
 class InvolvedVehicleInline(TabularInline):
@@ -60,7 +76,26 @@ class CaseAdmin(ModelAdmin):
 
     list_filter = ("is_human_managed", "stage", "resolution_choice")
     list_filter_submit = True  # Buton de filtrare dedicat
-    search_fields = ("client__phone_number", "client__first_name", "client__last_name", "id")
+    search_fields = (
+        "client__phone_number",
+        "client__first_name",
+        "client__last_name",
+        "id",
+    )
+
+    def get_search_results(self, request, queryset, search_term):
+        result_qs, use_distinct = super().get_search_results(request, queryset, search_term)
+
+        if search_term:
+            # Custom search for Victim License Plate in Case
+            victim_plate_q = Q(vehicles__role=InvolvedVehicle.Role.VICTIM) & Q(
+                vehicles__license_plate__icontains=search_term
+            )
+            custom_qs = queryset.filter(victim_plate_q)
+            result_qs = result_qs | custom_qs
+            return result_qs.distinct(), use_distinct
+
+        return result_qs, use_distinct
 
     # Adăugăm Inline-ul de Loguri pentru a vedea chat-ul direct în dosar
     inlines = [InvolvedVehicleInline, CaseDocumentInline, CommunicationLogInline]
