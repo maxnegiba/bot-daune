@@ -70,8 +70,19 @@
         <label for="phone" style="font-size: 12px; color: #555; margin-left: 5px;">Număr Telefon</label>
         <input type="tel" id="phone" placeholder="Ex: 0722123456" />
 
-        <label for="name" style="font-size: 12px; color: #555; margin-left: 5px; margin-top: 10px;">Numele Tău (Opțional)</label>
-        <input type="text" id="name" placeholder="Ex: Ion Popescu" />
+        <div style="display: flex; gap: 10px;">
+            <div style="flex: 1;">
+                <label for="last_name" style="font-size: 12px; color: #555; margin-left: 5px; margin-top: 10px;">Nume</label>
+                <input type="text" id="last_name" placeholder="Ex: Popescu" style="width: 100%; box-sizing: border-box;" />
+            </div>
+            <div style="flex: 1;">
+                <label for="first_name" style="font-size: 12px; color: #555; margin-left: 5px; margin-top: 10px;">Prenume</label>
+                <input type="text" id="first_name" placeholder="Ex: Ion" style="width: 100%; box-sizing: border-box;" />
+            </div>
+        </div>
+
+        <label for="plate_number" style="font-size: 12px; color: #555; margin-left: 5px; margin-top: 10px;">Număr Înmatriculare Avariat</label>
+        <input type="text" id="plate_number" placeholder="Ex: B 123 ABC" style="text-transform: uppercase;" />
 
         <button class="primary-btn" onclick="login()">Începe Conversația</button>
         <p id="login-error" style="color: #dc3545; margin-top: 15px; font-size: 13px;"></p>
@@ -170,11 +181,13 @@
     // --- AUTH ---
     async function login() {
         const phone = document.getElementById('phone').value.trim();
-        const name = document.getElementById('name').value.trim();
+        const first_name = document.getElementById('first_name').value.trim();
+        const last_name = document.getElementById('last_name').value.trim();
+        const plate_number = document.getElementById('plate_number').value.trim();
         const errElem = document.getElementById('login-error');
 
-        if (!phone) {
-            errElem.innerText = "Te rugăm să introduci numărul de telefon.";
+        if (!phone || !first_name || !last_name || !plate_number) {
+            errElem.innerText = "Toate câmpurile sunt obligatorii (Nume, Prenume, Telefon, Nr. Înmatriculare).";
             return;
         }
 
@@ -189,7 +202,7 @@
                     'Content-Type': 'application/json',
                     'X-CSRFToken': getCookie('csrftoken')
                 },
-                body: JSON.stringify({phone, name})
+                body: JSON.stringify({phone, first_name, last_name, plate_number})
             });
             const data = await res.json();
 

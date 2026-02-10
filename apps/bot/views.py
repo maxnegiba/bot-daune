@@ -8,7 +8,7 @@ from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from django.core.exceptions import ValidationError
 from twilio.request_validator import RequestValidator
-from apps.claims.models import Client, Case, CommunicationLog
+from apps.claims.models import Client, Case, CommunicationLog, InvolvedVehicle
 from .flow import FlowManager
 from .utils import WhatsAppClient
 from .security import rate_limit, validate_and_rename_file, sanitize_text, get_session_key
@@ -81,7 +81,7 @@ def whatsapp_webhook(request):
 @rate_limit(rate="10/m")  # Limitează login-urile de pe același IP
 def chat_login(request):
     """
-    Autentificare simplă prin nume și telefon.
+    Autentificare simplă prin nume, prenume, telefon și nr. înmatriculare.
     Returnează sesiunea (case_id setat in sesiune).
     CSRF protejat.
     """
@@ -91,11 +91,17 @@ def chat_login(request):
     try:
         data = json.loads(request.body)
         phone = data.get("phone", "").strip()
-        name = data.get("name", "").strip()
+        first_name = data.get("first_name", "").strip()
+        last_name = data.get("last_name", "").strip()
+        plate_number = data.get("plate_number", "").strip()
 
-        # 1. Validare Telefon (Regex simplu: +40 sau 07...)
+        # 1. Validare
         if not phone:
-            return JsonResponse({"error": "Phone number is required"}, status=400)
+            return JsonResponse({"error": "Numărul de telefon este obligatoriu."}, status=400)
+        if not first_name or not last_name:
+            return JsonResponse({"error": "Numele și Prenumele sunt obligatorii."}, status=400)
+        if not plate_number:
+            return JsonResponse({"error": "Numărul de înmatriculare avariat este obligatoriu."}, status=400)
 
         # Stergem spatii/caractere nedorite
         phone_clean = re.sub(r'[^0-9+]', '', phone)
@@ -105,10 +111,11 @@ def chat_login(request):
 
         # 2. Logica Client
         client, _ = Client.objects.get_or_create(phone_number=phone_clean)
-        if name:
-            client.full_name = sanitize_text(name)
-            client.save()
+        client.first_name = sanitize_text(first_name)
+        client.last_name = sanitize_text(last_name)
+        client.save()
 
+        # 3. Logica Dosar (Case)
         case = Case.objects.filter(client=client).exclude(stage=Case.Stage.CLOSED).last()
 
         if not case:
@@ -117,7 +124,17 @@ def chat_login(request):
             manager = FlowManager(case, phone_clean, channel="WEB")
             manager.process_message("text", "START_WEB_SESSION")
 
-        # 3. Setează Sesiunea (Secure)
+        # 4. Salvare Vehicul Avariat (VICTIM)
+        # Căutăm dacă există deja un vehicul 'VICTIM' asociat dosarului
+        victim_vehicle = InvolvedVehicle.objects.filter(case=case, role=InvolvedVehicle.Role.VICTIM).first()
+        if not victim_vehicle:
+            victim_vehicle = InvolvedVehicle(case=case, role=InvolvedVehicle.Role.VICTIM)
+
+        # Actualizăm numărul de înmatriculare (uppercase, fără spații inutile)
+        victim_vehicle.license_plate = sanitize_text(plate_number).upper().replace(" ", "")
+        victim_vehicle.save()
+
+        # 5. Setează Sesiunea (Secure)
         request.session['case_id'] = str(case.id)
         # Setează expirarea sesiunii la 10 ani (persistent)
         request.session.set_expiry(315360000)
