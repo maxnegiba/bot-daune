@@ -366,7 +366,7 @@ def send_claim_email_task(case_id):
                             content_type = "application/octet-stream"
 
                         # Nume fișier lizibil pentru atașament
-                        doc_label = doc.get_doc_type_display().replace(" ", "_")
+                        doc_label = doc.get_doc_type_display().replace("/", "_").replace(" ", "_")
                         clean_name = f"{doc_label}_{count}.{fname.split('.')[-1]}"
 
                         # Calea unică în directorul temporar
