@@ -104,11 +104,13 @@ def analyze_document_task(document_id):
 
         # Numărăm documentele pending (excluzând cel curent, deși el e deja salvat cu ocr_data deci nu mai e pending)
         # Atenție: JSONField gol poate fi 'null' sau '{}'. FlowManager pune '{}'.
-        pending_count = CaseDocument.objects.filter(
-            case=case,
-            uploaded_at__gte=recent_threshold,
-            ocr_data__exact={}
-        ).exclude(id=doc.id).count()
+        pending_count = (
+            CaseDocument.objects.filter(
+                case=case, uploaded_at__gte=recent_threshold, ocr_data__exact={}
+            )
+            .exclude(id=doc.id)
+            .count()
+        )
 
         if pending_count == 0:
             # Suntem ultimul task din "lot". Notificăm.
@@ -164,8 +166,7 @@ def check_status_and_notify(case, processed_doc=None):
 
     # Excludem documentele vechi care au fost deja validate in trecut
     recent_docs = CaseDocument.objects.filter(
-        case=case,
-        uploaded_at__gte=recent_threshold
+        case=case, uploaded_at__gte=recent_threshold
     ).exclude(ocr_data__exact={})
 
     # Construim lista de documente validate și erori
@@ -175,11 +176,13 @@ def check_status_and_notify(case, processed_doc=None):
     for d in recent_docs:
         # Verificăm dacă e un tip valid sau Unknown
         if d.doc_type == CaseDocument.DocType.UNKNOWN:
-             # E posibil să fie un document nerelevant sau eroare AI
-             fname = os.path.basename(d.file.name)
-             error_messages.append(f"⚠️ Nu am putut identifica documentul '{fname}'. Te rog încarcă doar: Buletin, Talon, Amiabilă sau Video.")
+            # E posibil să fie un document nerelevant sau eroare AI
+            fname = os.path.basename(d.file.name)
+            error_messages.append(
+                f"⚠️ Nu am putut identifica documentul '{fname}'. Te rog încarcă doar: Buletin, Talon, Amiabilă sau Video."
+            )
         else:
-             validated_names.append(d.get_doc_type_display())
+            validated_names.append(d.get_doc_type_display())
 
     # De-duplicate names
     validated_names = sorted(list(set(validated_names)))
@@ -195,33 +198,34 @@ def check_status_and_notify(case, processed_doc=None):
 
     # Conditie: Video 360 SAU Minim 4 Poze
     damage_photos_count = CaseDocument.objects.filter(
-        case=case,
-        doc_type=CaseDocument.DocType.DAMAGE_PHOTO
+        case=case, doc_type=CaseDocument.DocType.DAMAGE_PHOTO
     ).count()
 
     if not case.has_scene_video and damage_photos_count < 4:
-        missing.append(f"Video 360 Grade SAU minim 4 Poze Auto (ai trimis {damage_photos_count})")
+        missing.append(
+            f"Video 360 Grade SAU minim 4 Poze Auto (ai trimis {damage_photos_count})"
+        )
 
     # Condiție Extras Cont
     if case.resolution_choice == Case.Resolution.OWN_REGIME:
         if not case.has_bank_statement:
-                missing.append("Extras Cont Bancar (pt. Regie Proprie)")
+            missing.append("Extras Cont Bancar (pt. Regie Proprie)")
 
     # Verificăm stadiul curent pentru a nu trimite mesaje inutile
     if case.stage == Case.Stage.COLLECTING_DOCS:
         if not missing:
             # TOTUL E COMPLET (DOCUMENTE)
             if case.resolution_choice != Case.Resolution.UNDECIDED:
-                 case.stage = Case.Stage.SIGNING_MANDATE
-                 case.save()
+                case.stage = Case.Stage.SIGNING_MANDATE
+                case.save()
 
-                 domain = settings.APP_DOMAIN
-                 link = f"{domain}/mandat/semneaza/{case.id}/"
-                 msg = (
+                domain = settings.APP_DOMAIN
+                link = f"{domain}/mandat/semneaza/{case.id}/"
+                msg = (
                     "📝 Dosar complet! Mai avem un singur pas: Semnarea Mandatului.\n"
                     f"Te rog intră aici și semnează:\n{link}"
-                 )
-                 client.send_text(recipient, msg)
+                )
+                client.send_text(recipient, msg)
             else:
                 client.send_buttons(
                     recipient,
@@ -324,7 +328,7 @@ def send_claim_email_task(case_id):
         Vă rugăm să ne confirmați primirea și să ne comunicați numărul de dosar alocat prin Reply la acest email.
         
         Cu stimă,
-        Echipa Auto Daune Bot
+        Echipa ASociatia PAgubitilor RCA
         """
 
         email = EmailMessage(
@@ -353,11 +357,11 @@ def send_claim_email_task(case_id):
                         elif fname.endswith(".png"):
                             content_type = "image/png"
                         elif fname.endswith(".jpg") or fname.endswith(".jpeg"):
-                             content_type = "image/jpeg"
+                            content_type = "image/jpeg"
                         elif fname.endswith(".mp4"):
                             content_type = "video/mp4"
                         elif fname.endswith(".mov"):
-                             content_type = "video/quicktime"
+                            content_type = "video/quicktime"
                         else:
                             content_type = "application/octet-stream"
 
@@ -447,7 +451,9 @@ def check_email_replies_task():
                         if match:
                             case_id_prefix = match.group(1)
                             # Căutăm dosarul (startsWith)
-                            case = Case.objects.filter(id__startswith=case_id_prefix).first()
+                            case = Case.objects.filter(
+                                id__startswith=case_id_prefix
+                            ).first()
 
                             if case:
                                 # Salvăm Message-ID pentru Reply
@@ -472,7 +478,13 @@ def check_email_replies_task():
 
                                 # 2. Analizăm conținutul
                                 body_lower = body.lower()
-                                keywords_offer = ["oferta", "propunere", "despagubire", "suma de", "acceptul"]
+                                keywords_offer = [
+                                    "oferta",
+                                    "propunere",
+                                    "despagubire",
+                                    "suma de",
+                                    "acceptul",
+                                ]
                                 is_offer = any(k in body_lower for k in keywords_offer)
 
                                 client = get_client(case)
@@ -484,7 +496,9 @@ def check_email_replies_task():
 
                                     # Încercăm să extragem suma (simplistic)
                                     # Ex: "suma de 1200 RON"
-                                    amount_match = re.search(r"(\d+([.,]\d+)?)\s*(ron|lei)", body_lower)
+                                    amount_match = re.search(
+                                        r"(\d+([.,]\d+)?)\s*(ron|lei)", body_lower
+                                    )
                                     if amount_match:
                                         val = amount_match.group(1).replace(",", ".")
                                         try:
@@ -497,11 +511,16 @@ def check_email_replies_task():
                                     client.send_buttons(
                                         recipient,
                                         f"📢 Am primit o OFERTĂ de la asigurator!\n\nDin textul emailului: {body[:300]}...\n\nCe dorești să faci?",
-                                        ["Accept Oferta", "Schimb Optiunea"] # Max 3 buttons usually.
+                                        [
+                                            "Accept Oferta",
+                                            "Schimb Optiunea",
+                                        ],  # Max 3 buttons usually.
                                     )
                                 else:
                                     # Forwardăm mesajul către client (Relay)
-                                    print(f"ℹ️ Mesaj info pentru {case.id} -> Forward WhatsApp")
+                                    print(
+                                        f"ℹ️ Mesaj info pentru {case.id} -> Forward WhatsApp"
+                                    )
                                     msg_forward = (
                                         f"📩 Mesaj nou de la asigurator:\n\n{body[:800]}...\n\n"
                                         "👉 Răspunde aici (text sau poze) și voi trimite răspunsul tău direct la asigurator."
@@ -527,18 +546,28 @@ def send_offer_acceptance_email_task(case_id):
             print("⚠️ Nu am emailul asiguratorului salvat.")
             return
 
-        subject = f"Acceptare Oferta - Dosar {str(case.id)[:8]} - {case.client.full_name}"
+        subject = (
+            f"Acceptare Oferta - Dosar {str(case.id)[:8]} - {case.client.full_name}"
+        )
 
         # Detalii bancare
         iban_info = ""
         if case.resolution_choice == Case.Resolution.OWN_REGIME and case.client.iban:
             iban_info = f"\nCont IBAN: {case.client.iban}\nTitular Cont: {case.client.full_name}"
 
-        offer_val = f"{case.settlement_offer_value} RON" if case.settlement_offer_value else "(Conform ofertei transmise)"
+        offer_val = (
+            f"{case.settlement_offer_value} RON"
+            if case.settlement_offer_value
+            else "(Conform ofertei transmise)"
+        )
 
         # Detalii Auto
         victim_vehicle = case.vehicles.filter(role=InvolvedVehicle.Role.VICTIM).first()
-        auto_details = f"Auto: {victim_vehicle.license_plate} (VIN: {victim_vehicle.vin_number})" if victim_vehicle else ""
+        auto_details = (
+            f"Auto: {victim_vehicle.license_plate} (VIN: {victim_vehicle.vin_number})"
+            if victim_vehicle
+            else ""
+        )
 
         body = f"""
         Buna ziua,
@@ -564,13 +593,14 @@ def send_offer_acceptance_email_task(case_id):
             body=body,
             from_email=settings.DEFAULT_FROM_EMAIL,
             to=[case.insurer_email],
-            cc=["office@autodaune.ro"]
+            cc=["office@autodaune.ro"],
         )
         email.send()
         print(f"✅ Email acceptare trimis pentru dosar {case.id}")
 
     except Exception as e:
         print(f"Eroare email acceptare: {e}")
+
 
 # --- TASK 5: Email Schimbare Optiune ---
 @shared_task
@@ -600,7 +630,7 @@ def send_option_change_email_task(case_id, new_option_label):
             body=body,
             from_email=settings.DEFAULT_FROM_EMAIL,
             to=[case.insurer_email],
-            cc=["office@autodaune.ro"]
+            cc=["office@autodaune.ro"],
         )
         email.send()
         print(f"✅ Email schimbare optiune trimis pentru dosar {case.id}")
@@ -643,7 +673,7 @@ def relay_message_to_insurer_task(case_id, message_text, media_urls=None):
             from_email=settings.DEFAULT_FROM_EMAIL,
             to=[case.insurer_email],
             headers=headers,
-            cc=["office@autodaune.ro"]
+            cc=["office@autodaune.ro"],
         )
 
         # Download and attach media if any
@@ -656,17 +686,17 @@ def relay_message_to_insurer_task(case_id, message_text, media_urls=None):
                         fname = url.split("/")[-1]
                         # Extensii
                         if "image" in mime_type:
-                             if not fname.endswith((".jpg", ".png", ".jpeg")):
-                                 fname += ".jpg"
+                            if not fname.endswith((".jpg", ".png", ".jpeg")):
+                                fname += ".jpg"
                         elif "pdf" in mime_type:
-                             if not fname.endswith(".pdf"):
-                                 fname += ".pdf"
+                            if not fname.endswith(".pdf"):
+                                fname += ".pdf"
 
                         # Salvăm în temp file
                         tmp_fd, tmp_path = tempfile.mkstemp(suffix=f"_{fname}")
                         os.close(tmp_fd)
 
-                        with open(tmp_path, 'wb') as f:
+                        with open(tmp_path, "wb") as f:
                             for chunk in r.iter_content(chunk_size=8192):
                                 if chunk:
                                     f.write(chunk)
@@ -680,7 +710,7 @@ def relay_message_to_insurer_task(case_id, message_text, media_urls=None):
         try:
             email.send()
         finally:
-             for p in temp_files_to_cleanup:
+            for p in temp_files_to_cleanup:
                 try:
                     if os.path.exists(p):
                         os.remove(p)
