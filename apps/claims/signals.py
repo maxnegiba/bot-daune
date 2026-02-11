@@ -20,6 +20,26 @@ def process_ocr_data(sender, instance, created, **kwargs):
 
     # --- LOGICA PENTRU AMIABILĂ ---
     if "AMIABILA" in doc_type:
+        # 1. Extragem Data Accidentului (dacă există)
+        accident_date_str = extracted.get("data_accident")
+        if accident_date_str:
+            try:
+                from datetime import datetime
+                # Curățăm eventualele spații
+                accident_date_str = accident_date_str.strip()
+                # Încercăm câteva formate comune
+                for fmt in ["%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"]:
+                    try:
+                        dt = datetime.strptime(accident_date_str, fmt).date()
+                        case.accident_date = dt
+                        case.save(update_fields=["accident_date"])
+                        print(f"--- [SIGNAL] Data accident salvată: {dt} ---")
+                        break
+                    except ValueError:
+                        continue
+            except Exception as e:
+                print(f"Eroare parsing data accident: {e}")
+
         # Procesăm Vehiculul A
         update_or_create_vehicle(
             case=case,
@@ -42,6 +62,31 @@ def process_ocr_data(sender, instance, created, **kwargs):
             insurance_company=extracted.get("asigurator_b"),
         )
 
+    # --- LOGICA PENTRU CI (BULETIN) ---
+    elif "CI" in doc_type or "BULETIN" in doc_type:
+        client = case.client
+        updated_fields = []
+
+        if extracted.get("adresa_domiciliu"):
+            client.address = extracted.get("adresa_domiciliu")
+            updated_fields.append("address")
+
+        if extracted.get("seria_ci"):
+            client.id_series = extracted.get("seria_ci")
+            updated_fields.append("id_series")
+
+        if extracted.get("numar_ci"):
+            client.id_number = extracted.get("numar_ci")
+            updated_fields.append("id_number")
+
+        if extracted.get("cnp"):
+            client.cnp = extracted.get("cnp")
+            updated_fields.append("cnp")
+
+        if updated_fields:
+            client.save(update_fields=updated_fields)
+            print(f"--- [SIGNAL] Client actualizat (CI): {updated_fields} ---")
+
     # --- LOGICA PENTRU PROCURĂ / TALON ---
     elif "PROCURA" in doc_type or "TALON" in doc_type:
         # Aici presupunem că documentul aparține clientului (deci nu vinovatului, de obicei)
@@ -53,6 +98,8 @@ def process_ocr_data(sender, instance, created, **kwargs):
             vin=extracted.get("vin"),
             driver_name=extracted.get("nume"),
             is_guilty_verdict="Unknown",
+            make=extracted.get("marca"),
+            model=extracted.get("model"),
         )
 
 
@@ -64,6 +111,8 @@ def update_or_create_vehicle(
     driver_name,
     is_guilty_verdict,
     insurance_company=None,
+    make=None,
+    model=None,
 ):
     """
     Funcție ajutătoare care caută vehiculul și îl actualizează, sau îl creează.
@@ -85,6 +134,8 @@ def update_or_create_vehicle(
         if insurance_company and insurance_company != "null"
         else None
     )
+    make = make.strip() if make and make != "null" else None
+    model = model.strip() if model and model != "null" else None
 
     if not license_plate:
         return
@@ -111,6 +162,10 @@ def update_or_create_vehicle(
             vehicle.driver_name = driver_name
         if insurance_company:
             vehicle.insurance_company_name = insurance_company
+        if make:
+            vehicle.make = make
+        if model:
+            vehicle.model = model
 
         # Actualizăm vinovăția DOAR dacă avem un verdict nou clar
         if new_is_offender is not None:
@@ -126,6 +181,8 @@ def update_or_create_vehicle(
             driver_name=driver_name or "",
             insurance_company_name=insurance_company or "",
             is_offender=new_is_offender if new_is_offender is not None else False,
+            make=make or "",
+            model=model or "",
         )
         created = True
 

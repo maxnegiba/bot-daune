@@ -4,32 +4,61 @@
     <meta charset="utf-8">
     <title>Mandat de Reprezentare</title>
     <style>
-        body { font-family: "DejaVu Sans", sans-serif; font-size: 11pt; line-height: 1.5; margin: 40px; }
-        h1 { text-align: center; font-size: 16pt; margin-bottom: 30px; text-transform: uppercase; }
+        body { font-family: "DejaVu Sans", sans-serif; font-size: 10pt; line-height: 1.4; margin: 40px; }
+        h1 { text-align: center; font-size: 14pt; margin-bottom: 5px; text-transform: uppercase; font-weight: bold; }
+        h2 { text-align: center; font-size: 14pt; margin-bottom: 20px; text-transform: uppercase; font-weight: bold; }
         .content { text-align: justify; }
-        .signature-section { margin-top: 50px; display: flex; justify-content: space-between; }
-        .sign-box { float: right; text-align: center; width: 200px; }
-        .sign-img { width: 150px; border-bottom: 1px solid #000; }
-        .footer { margin-top: 100px; font-size: 9pt; color: #555; text-align: center; border-top: 1px solid #ccc; padding-top: 10px; }
+        .signature-section { margin-top: 40px; }
+        .sign-box { float: right; text-align: center; width: 250px; }
+        .sign-img { width: 150px; height: auto; border-bottom: 1px solid #000; margin-top: 10px; }
+        .footer { margin-top: 50px; font-size: 8pt; color: #555; text-align: center; border-top: 1px solid #ccc; padding-top: 10px; }
+        .bold { font-weight: bold; }
+        .underline { text-decoration: underline; }
     </style>
 </head>
 <body>
-    <h1>MANDAT DE REPREZENTARE</h1>
+    <h1>- IMPUTERNICIRE -</h1>
+    <h2>- MANDAT DE REPREZENTARE -</h2>
     
     <div class="content">
-        <p>Subsemnatul(a), <strong>{{ client.full_name|default:"........................" }}</strong>, identificat(ă) cu CNP <strong>{{ client.cnp|default:"........................" }}</strong>,</p>
+        <p>
+            Subsemnatul/Subscrisa <span class="bold">{{ client.full_name|default:"_______________________________________" }}</span>
+            cu domiciliul / sediul în <span class="bold">{{ client.address|default:"Loc. ________________ str. ____________________________ nr. ____, bl. ____, sc. ____, et. ____, ap. ____, jud. ________________________" }}</span>,
+            identificat/ă cu C.I. seria <span class="bold">{{ client.id_series|default:"____" }}</span>
+            nr. <span class="bold">{{ client.id_number|default:"_____________" }}</span>,
+            avand CNP/CUI <span class="bold">{{ client.cnp|default:"_________________________________________" }}</span>,
+            Tel: <span class="bold">{{ client.phone_number|default:"________________________________" }}</span>
+            e-mail <span class="bold">{{ client.email|default:"___________________________________________________________" }}</span>
+            în calitate de membru al Asociației Păgubiților RCA, imputernicesc cu puteri depline pe:
+        </p>
 
-        <p>Prin prezenta împuternicesc societatea <strong>AUTO DAUNE SRL</strong> să mă reprezinte cu puteri depline în fața asiguratorului în vederea instrumentării, soluționării și încasării despăgubirii aferente dosarului de daună deschis pentru evenimentul rutier.</p>
+        <p>
+            <strong>Asociația Păgubiților RCA</strong>, avand sediul procesual ales pentru corespondenta in str. Poet Grigore Alexandrescu Bl. E3 Parter, Loc. Targoviste , Jud. Dambovita, CIF: 41401972 , Nr. Reg. Asociatii si Fundatii la poziția 13/I/A/10.06.2019, Call center 021.9906 , Direct Line 0731.007.658 , Tel Fix: 0245.651.000 , E-mail: office@aprca.ro sa imi reprezinte interesele in fata tuturor institutiilor publice competente, persoane fizice si juridice, I.P.J, IGPR, R.A.R, I.S.U, UPU, Unitati spitalicesti, ASF, SAL-Fin, FGA, ANSPDCP, EIOPA, CoB, Institutul Avocatului Poporului, Parlamentul Romaniei, Senatul Romaniei, Administratia Prezidentiale precum si in fata oricarui asigurator din Romania sau reprezentanti si/sau corespondenti ai asiguratorilor externi, in fata BAAR, precum si la sediul oricarui service auto, societate de rent a car, societate de transport-tractari, in vederea sustinerii intereselor mele privind incasarea despagubirilor , a penalitatilor de intarziere si a oricaror alte sume de bani cuvenite legal in urma evenimentului rutier in care am fost implicat cu autovehiculul/motociclul/remorca:
+        </p>
 
-        <p>Mandatarul are dreptul să:</p>
-        <ul>
-            <li>Depună și să ridice documente în numele meu;</li>
-            <li>Să solicite reconstatarea avariilor;</li>
-            <li>Să negocieze cuantumul despăgubirii;</li>
-            <li>Să încaseze despăgubirea în contul bancar al unității reparatoare (în cazul plății directe).</li>
-        </ul>
+        <p>
+            Marca: <span class="bold">{{ vehicle.make|default:"_______________________" }}</span>
+            Tipul: <span class="bold">{{ vehicle.model|default:"_______________________" }}</span>
+            avand nr. inmatriculare: <span class="bold">{{ vehicle.license_plate|default:"_______________________" }}</span>
+            cu seria de sasiu <span class="bold">{{ vehicle.vin_number|default:"_________________________________________" }}</span>
+            pt constatarea, instrumentarea si lichidarea prin plata integrala a daunelor de catre asiguratori, BAAR sau FGA in urma evenimentului rutier din data de <span class="bold">{{ case.accident_date|date:"d.m.Y"|default:"______________________" }}</span>
+        </p>
 
-        <p>Declar pe proprie răspundere că accept oferta de despăgubire sau reparația conform condițiilor agreate.</p>
+        <p>
+            Pentru indeplinirea acestui mandat, MANDATARUL se va prezenta la asiguratori, la service-uri, va depune si va ridica toate actele/documentele sau certificatele solicitate, va putea verifica si semna devizele de reparatie, notele de constatare, facturile emise de: unitatile reparatoare, societati specializate in tractari auto precum si societati de inchiriere auto
+        </p>
+
+        <p>
+            Asociatia Pagubitilor RCA va putea face orice fel de declaratii-petitii-reclamatii necesare in fata oricaror institutii publice sau private sus-mentionate, in vederea apararii drepturilor si intereselor mele legale semnatura lui fiindu-mi opozabila.
+        </p>
+
+        <p>
+            In sustinerea intereselor mele legale, mandatarul va putea depune plangere/actiune catre parchetele de pe langa judecatoriile din aria de jurisdictie, catre orice instanta de orice grad, va putea angaja si un avocat prin semnarea contractului de asistenta juridica cu toate drepturile si obligatiile ce decurg din acesta.
+        </p>
+
+        <p>
+            Mandatul este acceptat de catre mandatar fiind valabil pana la indeplinirea scopului pentru care a fost eliberat, dar nu mai mult de 3(trei) ani conform prevederilor Art.2015 N.C.Civ.
+        </p>
 
         <br>
         <p>Data: <strong>{{ date }}</strong></p>
