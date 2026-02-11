@@ -67,8 +67,11 @@
     <div class="signature-section">
         <div class="sign-box">
             <p>Semnătură Mandant:</p>
-            <img src="{{ signature_data }}" class="sign-img" />
-            <p><i>(Semnat digital)</i></p>
+            {% if signature_client %}
+                <img src="{{ signature_client }}" class="sign-img" />
+            {% else %}
+                <p><i>(Semnat digital)</i></p>
+            {% endif %}
         </div>
     </div>
 
