@@ -16,7 +16,7 @@ except ImportError:
     HTML = None
 
 from apps.claims.models import Case, CaseDocument, InvolvedVehicle
-from apps.bot.utils import WhatsAppClient
+from apps.bot.utils import WhatsAppClient, WebChatClient
 from apps.claims.tasks import send_claim_email_task  # <--- IMPORT TASK EMAIL
 
 
@@ -122,5 +122,15 @@ def _handle_signature_submission(request, case):
         )
     except Exception as e:
         print(f"Eroare WhatsApp: {e}")
+
+    # --- G. Notificare WebChat ---
+    try:
+        wc = WebChatClient()
+        wc.send_text(
+            case,
+            "✅ Am primit mandatul semnat! Dosarul complet (acte + mandat) a fost trimis automat către asigurator. Te vom anunța când primim numărul de dosar.",
+        )
+    except Exception as e:
+        print(f"Eroare WebChat: {e}")
 
     return JsonResponse({"status": "success"})
