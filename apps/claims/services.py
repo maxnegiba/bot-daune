@@ -119,8 +119,12 @@ class DocumentAnalyzer:
            - IGNORĂ spațiile din IBAN la extragere (sau returnează-l compact).
            - VERIFICĂ vizual dacă IBAN-ul este valid și complet.
 
+        INSTRUCȚIUNI PENTRU POZE CU MAȘINA (FOTO_AUTO):
+           - Dacă imaginea este o fotografie a unui vehicul (avariat sau nu) și pare a fi făcută la fața locului sau pentru dosarul de daună, clasific-o ca 'FOTO_AUTO'.
+           - Nu este nevoie să extragi date specifice (nr. înmatriculare etc.) din aceste poze, doar confirmă tipul.
+
         TIPURI ACCEPTATE (tip_document):
-        ["CI", "PERMIS", "TALON", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "ALTELE"]
+        ["CI", "PERMIS", "TALON", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "FOTO_AUTO", "ALTELE"]
 
         EXTRAGERE DATE (date_extrase):
 
@@ -140,7 +144,10 @@ class DocumentAnalyzer:
         2. PENTRU EXTRAS DE CONT (Folosește Imaginea 1):
            - 'iban': IBAN-ul complet identificat (RO...).
 
-        3. PENTRU ALTE DOCUMENTE (Folosește Imaginea 1):
+        3. PENTRU POZE AUTO (FOTO_AUTO):
+           - Nu extrage nimic. Returnează doar "tip_document": "FOTO_AUTO".
+
+        4. PENTRU ALTE DOCUMENTE (Folosește Imaginea 1):
            - Talon/Procură: 'nr_auto', 'vin', 'nume', 'cnp'.
            - Buletin: 'nume', 'cnp'.
 
