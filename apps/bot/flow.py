@@ -26,6 +26,9 @@ class FlowManager:
         """
         # 0. Verificăm intervenția umană
         if self.case.is_human_managed:
+            # EXCEPȚIE: Dacă e Web Chat și avem fișiere, le procesăm "silentios"
+            if self.channel == "WEB" and media_urls:
+                self._handle_image_upload(media_urls, silent=True)
             return
 
         stage = self.case.stage
@@ -121,7 +124,7 @@ class FlowManager:
                 ["DA, Deschide Dosar", "NU, Am altă problemă"],
             )
 
-    def _handle_image_upload(self, media_urls):
+    def _handle_image_upload(self, media_urls, silent=False):
         saved_count = 0
         has_async_processing = False
 
@@ -182,7 +185,7 @@ class FlowManager:
             except Exception as e:
                 print(f"Eroare download {url}: {e}")
 
-        if saved_count > 0:
+        if saved_count > 0 and not silent:
             self.client.send_text(self.case, f"Am primit {saved_count} fișier(e). Analizez...")
             # Verificăm statusul imediat DOAR daca nu avem procesare asincrona (ex: doar video)
             if not has_async_processing:
