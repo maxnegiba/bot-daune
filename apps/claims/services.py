@@ -111,6 +111,14 @@ class DocumentAnalyzer:
              - Verifică prima literă: 'D' poate fi confundat cu 'B' și invers (ex: DOBLEA vs BOBLEA).
            - Transcrie numele complet, corectând evidentele erori de scriere olografă.
 
+        INSTRUCȚIUNI PENTRU EXTRAS DE CONT (BANCAR):
+           - IDENTIFICARE: Caută termeni precum "Extras de cont", "Cont curent", "IBAN", "Banca", "Sold", "Tranzactii".
+           - SCOP PRINCIPAL: Extrage codul IBAN complet.
+           - FORMAT IBAN ROMÂNIA: Începe obligatoriu cu "RO", urmat de 2 cifre de control, 4 caractere (cod bancă) și 16 caractere alfanumerice. Lungime totală: 24 caractere.
+           - EXEMPLU: RO98 BTRL 0120 1234 5678 90XX.
+           - IGNORĂ spațiile din IBAN la extragere (sau returnează-l compact).
+           - VERIFICĂ vizual dacă IBAN-ul este valid și complet.
+
         TIPURI ACCEPTATE (tip_document):
         ["CI", "PERMIS", "TALON", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "ALTELE"]
 
@@ -129,7 +137,10 @@ class DocumentAnalyzer:
              - 'nume_sofer_b': Numele din Rubrica 6 (Prioritar) sau Rubrica 9.
              - 'asigurator_b': Societatea de asigurări (Rubrica 8).
 
-        2. PENTRU ALTE DOCUMENTE (Folosește Imaginea 1):
+        2. PENTRU EXTRAS DE CONT (Folosește Imaginea 1):
+           - 'iban': IBAN-ul complet identificat (RO...).
+
+        3. PENTRU ALTE DOCUMENTE (Folosește Imaginea 1):
            - Talon/Procură: 'nr_auto', 'vin', 'nume', 'cnp'.
            - Buletin: 'nume', 'cnp'.
 
@@ -202,5 +213,9 @@ class DocumentAnalyzer:
         for key in ["nr_auto_a", "nr_auto_b", "nr_auto"]:
             if key in extracted and isinstance(extracted[key], str):
                 extracted[key] = extracted[key].upper().strip()
+
+        # Normalize IBAN (Uppercase, remove spaces)
+        if "iban" in extracted and isinstance(extracted["iban"], str):
+            extracted["iban"] = extracted["iban"].upper().replace(" ", "").strip()
 
         return data
