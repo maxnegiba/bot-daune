@@ -129,6 +129,7 @@ class DocumentAnalyzer:
         EXTRAGERE DATE (date_extrase):
 
         1. PENTRU AMIABILA:
+           - 'data_accident': Data evenimentului (ex: 20.05.2023).
            - Vehicul A (Imaginea 2 - Stânga):
              - 'nr_auto_a': Nr. Înmatriculare (Rubrica 7).
              - 'vin_a': Serie Șasiu (Opțional/Dacă este lizibil).
@@ -147,9 +148,20 @@ class DocumentAnalyzer:
         3. PENTRU POZE AUTO (FOTO_AUTO):
            - Nu extrage nimic. Returnează doar "tip_document": "FOTO_AUTO".
 
-        4. PENTRU ALTE DOCUMENTE (Folosește Imaginea 1):
-           - Talon/Procură: 'nr_auto', 'vin', 'nume', 'cnp'.
-           - Buletin: 'nume', 'cnp'.
+        4. PENTRU DOCUMENTE DE IDENTITATE (CI/BULETIN):
+           - 'nume': Nume complet.
+           - 'cnp': Cod Numeric Personal.
+           - 'adresa_domiciliu': Adresa completă de domiciliu (Strada, Nr, Bloc, Scara, Etaj, Ap, Loc, Judet).
+           - 'seria_ci': Seria CI (ex: RX).
+           - 'numar_ci': Numărul CI (ex: 123456).
+
+        5. PENTRU TALON (CERTIFICAT ÎNMATRICULARE):
+           - 'nr_auto': Nr. Înmatriculare.
+           - 'vin': Serie Șasiu.
+           - 'nume': Nume proprietar/utilizator.
+           - 'cnp': CNP proprietar (dacă apare).
+           - 'marca': Marca vehiculului (ex: VW, Ford).
+           - 'model': Modelul vehiculului (ex: Golf, Focus).
 
         ANALIZA ACCIDENT (analiza_accident) - Folosește Imaginea 1 (Completă):
         - Analizează schița și bifelor de la rubrica 12.

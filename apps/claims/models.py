@@ -17,6 +17,11 @@ class Client(models.Model):
         max_length=34, blank=True, null=True, help_text="Pentru Regie Proprie"
     )
 
+    # Date suplimentare (CI)
+    address = models.TextField(blank=True, null=True, verbose_name="Adresă Domiciliu")
+    id_series = models.CharField(max_length=10, blank=True, null=True, verbose_name="Serie CI")
+    id_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="Număr CI")
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     @property
@@ -111,6 +116,9 @@ class Case(models.Model):
     # Email Threading
     last_email_message_id = models.CharField(max_length=255, blank=True, null=True, help_text="Message-ID pentru threading email")
 
+    # Date Eveniment
+    accident_date = models.DateField(blank=True, null=True, verbose_name="Data Eveniment")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -131,6 +139,10 @@ class InvolvedVehicle(models.Model):
 
     license_plate = models.CharField(max_length=15, blank=True, null=True)
     vin_number = models.CharField(max_length=30, blank=True, null=True)
+
+    make = models.CharField(max_length=50, blank=True, null=True, verbose_name="Marca Auto")
+    model = models.CharField(max_length=50, blank=True, null=True, verbose_name="Model Auto")
+
     insurance_company_name = models.CharField(max_length=100, blank=True, null=True)
     policy_number = models.CharField(max_length=50, blank=True, null=True)
 

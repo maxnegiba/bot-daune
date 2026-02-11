@@ -15,7 +15,7 @@ try:
 except ImportError:
     HTML = None
 
-from apps.claims.models import Case, CaseDocument
+from apps.claims.models import Case, CaseDocument, InvolvedVehicle
 from apps.bot.utils import WhatsAppClient
 from apps.claims.tasks import send_claim_email_task  # <--- IMPORT TASK EMAIL
 
@@ -33,9 +33,13 @@ def sign_mandate_view(request, case_id):
     if request.method == "POST":
         return _handle_signature_submission(request, case)
 
+    # Căutăm vehiculul clientului (VICTIM)
+    vehicle = case.vehicles.filter(role=InvolvedVehicle.Role.VICTIM).first()
+
     context = {
         "case": case,
         "client": case.client,
+        "vehicle": vehicle,
         "date": timezone.now().strftime("%d.%m.%Y"),
     }
     return render(request, "signatures/signing_page.html", context)
@@ -61,10 +65,14 @@ def _handle_signature_submission(request, case):
     logo_url = f"file://{logo_path}" if logo_path else ""
     stampila_url = f"file://{stampila_path}" if stampila_path else ""
 
+    # Căutăm vehiculul clientului (VICTIM)
+    vehicle = case.vehicles.filter(role=InvolvedVehicle.Role.VICTIM).first()
+
     # --- B. Generare PDF ---
     pdf_context = {
         "case": case,
         "client": case.client,
+        "vehicle": vehicle,
         "date": timezone.now().strftime("%d.%m.%Y"),
         "signature_client": signature_data,  # Semnătura clientului (Base64)
         "logo_url": logo_url,  # Sigla Asociației
