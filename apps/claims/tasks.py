@@ -85,6 +85,9 @@ def analyze_document_task(document_id):
             doc.doc_type = CaseDocument.DocType.GUILTY_PARTY_DOCS
             updates["has_guilty_docs"] = True
 
+        elif "FOTO_AUTO" in tip_ai:
+            doc.doc_type = CaseDocument.DocType.DAMAGE_PHOTO
+
         # Salvăm documentul (local changes to doc instance)
         doc.save()
 
@@ -189,8 +192,15 @@ def check_status_and_notify(case, processed_doc=None):
         missing.append("Talon Auto (obligatoriu)")
     if not case.has_accident_report:
         missing.append("Amiabilă / PV Politie (obligatoriu)")
-    if not case.has_scene_video:
-        missing.append("Video 360 Grade (obligatoriu)")
+
+    # Conditie: Video 360 SAU Minim 4 Poze
+    damage_photos_count = CaseDocument.objects.filter(
+        case=case,
+        doc_type=CaseDocument.DocType.DAMAGE_PHOTO
+    ).count()
+
+    if not case.has_scene_video and damage_photos_count < 4:
+        missing.append(f"Video 360 Grade SAU minim 4 Poze Auto (ai trimis {damage_photos_count})")
 
     # Condiție Extras Cont
     if case.resolution_choice == Case.Resolution.OWN_REGIME:

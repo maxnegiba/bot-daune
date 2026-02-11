@@ -87,7 +87,8 @@ class FlowManager:
                 "- Buletinul (CI) persoanei păgubite\n"
                 "- Talonul (Certificat Înmatriculare) auto avariat\n"
                 "- Amiabila sau Proces Verbal Poliție\n"
-                "- Video 360° cu mașina avariată (sau poze din toate unghiurile)\n\n"
+                "- Video 360° cu mașina avariată SAU minim 4 poze (din toate colțurile + daune)\n\n"
+                "Instrucțiuni Poze: Te rog fă 4 poze din colțurile mașinii (față-stânga, față-dreapta, spate-stânga, spate-dreapta) și poze detaliate cu dauna.\n\n"
                 "📌 **OPȚIONAL (Dacă ai):**\n"
                 "- Autorizație Reparație (de la Poliție)\n"
                 "- Documente șofer vinovat (RCA, Talon, CI)\n"
@@ -226,8 +227,15 @@ class FlowManager:
             missing.append("Talon Auto (obligatoriu)")
         if not self.case.has_accident_report:
             missing.append("Amiabila / PV Politie (obligatoriu)")
-        if not self.case.has_scene_video:
-            missing.append("Video 360 Grade (obligatoriu)")
+
+        # Conditie: Video 360 SAU Minim 4 Poze
+        damage_photos_count = CaseDocument.objects.filter(
+            case=self.case,
+            doc_type=CaseDocument.DocType.DAMAGE_PHOTO
+        ).count()
+
+        if not self.case.has_scene_video and damage_photos_count < 4:
+            missing.append(f"Video 360 Grade SAU minim 4 Poze Auto (ai trimis {damage_photos_count})")
 
         # Condiție Extras Cont
         if self.case.resolution_choice == Case.Resolution.OWN_REGIME:
