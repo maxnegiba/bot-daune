@@ -33,8 +33,8 @@ def process_ocr_data(sender, instance, created, **kwargs):
     extracted = data.get("date_extrase", {})
     analiza = data.get("analiza_accident", {})
 
-    # --- LOGICA PENTRU AMIABILĂ ---
-    if "AMIABILA" in doc_type:
+    # --- LOGICA PENTRU AMIABILĂ / PV_POLITIE ---
+    if "AMIABILA" in doc_type or "PV_POLITIE" in doc_type:
         # 1. Extragem Data Accidentului (dacă există)
         accident_date_str = extracted.get("data_accident")
         if accident_date_str:
