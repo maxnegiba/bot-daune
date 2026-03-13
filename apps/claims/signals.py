@@ -102,10 +102,26 @@ def process_ocr_data(sender, instance, created, **kwargs):
             client.save(update_fields=updated_fields)
             print(f"--- [SIGNAL] Client actualizat (CI): {updated_fields} ---")
 
-    # --- LOGICA PENTRU PROCURĂ / TALON ---
-    elif "PROCURA" in doc_type or "TALON" in doc_type:
+    # --- LOGICA PENTRU PROCURĂ / TALON / CIV / RCA_PAGUBIT ---
+    elif "PROCURA" in doc_type or "TALON" in doc_type or "CIV" in doc_type or "RCA_PAGUBIT" in doc_type or "RCA" in doc_type:
         # Aici presupunem că documentul aparține clientului (deci nu vinovatului, de obicei)
         # Dar salvăm datele găsite.
+
+        policy_expiry_date = None
+        data_expirare_str = extracted.get("data_expirare")
+        if data_expirare_str:
+            try:
+                from datetime import datetime
+                data_expirare_str = data_expirare_str.strip()
+                for fmt in ["%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"]:
+                    try:
+                        policy_expiry_date = datetime.strptime(data_expirare_str, fmt).date()
+                        break
+                    except ValueError:
+                        continue
+            except Exception as e:
+                print(f"Eroare parsing data expirare RCA: {e}")
+
         update_or_create_vehicle(
             case=case,
             role_identifier="Client",  # Sau Generic
@@ -115,6 +131,9 @@ def process_ocr_data(sender, instance, created, **kwargs):
             is_guilty_verdict="Unknown",
             make=extracted.get("marca"),
             model=extracted.get("model"),
+            policy_number=extracted.get("nr_polita"),
+            insurance_company=extracted.get("asigurator") if ("RCA" in doc_type) else None,
+            policy_expiry_date=policy_expiry_date,
         )
 
 
@@ -128,6 +147,8 @@ def update_or_create_vehicle(
     insurance_company=None,
     make=None,
     model=None,
+    policy_number=None,
+    policy_expiry_date=None,
 ):
     """
     Funcție ajutătoare care caută vehiculul și îl actualizează, sau îl creează.
@@ -151,6 +172,7 @@ def update_or_create_vehicle(
     )
     make = make.strip() if make and make != "null" else None
     model = model.strip() if model and model != "null" else None
+    policy_number = policy_number.strip() if policy_number and policy_number != "null" else None
 
     if not license_plate:
         return
@@ -181,6 +203,10 @@ def update_or_create_vehicle(
             vehicle.make = make
         if model:
             vehicle.model = model
+        if policy_number:
+            vehicle.policy_number = policy_number
+        if policy_expiry_date:
+            vehicle.policy_expiry_date = policy_expiry_date
 
         # Actualizăm vinovăția DOAR dacă avem un verdict nou clar
         if new_is_offender is not None:
@@ -198,6 +224,8 @@ def update_or_create_vehicle(
             is_offender=new_is_offender if new_is_offender is not None else False,
             make=make or "",
             model=model or "",
+            policy_number=policy_number or "",
+            policy_expiry_date=policy_expiry_date,
         )
         created = True
 

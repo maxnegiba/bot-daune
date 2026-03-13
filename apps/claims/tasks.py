@@ -64,6 +64,14 @@ def analyze_document_task(document_id):
             doc.doc_type = CaseDocument.DocType.CAR_REGISTRATION
             updates["has_car_coupon"] = True
 
+        elif "CIV" in tip_ai:
+            doc.doc_type = CaseDocument.DocType.CAR_IDENTITY
+            updates["has_car_identity"] = True
+
+        elif "RCA_PAGUBIT" in tip_ai:
+            doc.doc_type = CaseDocument.DocType.VICTIM_RCA
+            updates["has_victim_rca"] = True
+
         elif "AMIABILA" in tip_ai or "CONSTATARE" in tip_ai:
             doc.doc_type = CaseDocument.DocType.ACCIDENT_REPORT
             updates["has_accident_report"] = True
@@ -193,6 +201,10 @@ def check_status_and_notify(case, processed_doc=None):
         missing.append("Buletin (obligatoriu)")
     if not case.has_car_coupon:
         missing.append("Talon Auto (obligatoriu)")
+    if not case.has_car_identity:
+        missing.append("Cartea Mașinii - CIV (obligatoriu)")
+    if not case.has_victim_rca:
+        missing.append("Polița RCA Păgubit (obligatoriu)")
     if not case.has_accident_report:
         missing.append("Amiabilă / PV Politie (obligatoriu)")
 

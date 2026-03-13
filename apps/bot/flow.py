@@ -89,6 +89,8 @@ class FlowManager:
                 "📌 **OBLIGATORIU:**\n"
                 "- Buletinul (CI) persoanei păgubite\n"
                 "- Talonul (Certificat Înmatriculare) auto avariat\n"
+                "- Cartea de Identitate a Vehiculului (CIV)\n"
+                "- Polița RCA a mașinii avariate\n"
                 "- Amiabila sau Proces Verbal Poliție\n"
                 "- Video 360° cu mașina avariată SAU minim 4 poze (din toate colțurile + daune)\n\n"
                 "Instrucțiuni Poze: Te rog fă 4 poze din colțurile mașinii (față-stânga, față-dreapta, spate-stânga, spate-dreapta) și poze detaliate cu dauna.\n\n"
@@ -228,6 +230,10 @@ class FlowManager:
             missing.append("Buletin (obligatoriu)")
         if not self.case.has_car_coupon:
             missing.append("Talon Auto (obligatoriu)")
+        if not self.case.has_car_identity:
+            missing.append("Cartea de Identitate a Vehiculului - CIV (obligatoriu)")
+        if not self.case.has_victim_rca:
+            missing.append("Polița RCA a mașinii avariate (obligatoriu)")
         if not self.case.has_accident_report:
             missing.append("Amiabila / PV Politie (obligatoriu)")
 
