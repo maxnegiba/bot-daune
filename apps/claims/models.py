@@ -64,6 +64,8 @@ class Case(models.Model):
     # Acestea vor fi bifate automat de AI sau manual de Bot
     has_id_card = models.BooleanField(default=False, verbose_name="Are Buletin?")
     has_car_coupon = models.BooleanField(default=False, verbose_name="Are Talon?")
+    has_car_identity = models.BooleanField(default=False, verbose_name="Are CIV?")
+    has_victim_rca = models.BooleanField(default=False, verbose_name="Are RCA Păgubit?")
     has_accident_report = models.BooleanField(
         default=False, verbose_name="Are Amiabilă/PV?"
     )
@@ -145,6 +147,7 @@ class InvolvedVehicle(models.Model):
 
     insurance_company_name = models.CharField(max_length=100, blank=True, null=True)
     policy_number = models.CharField(max_length=50, blank=True, null=True)
+    policy_expiry_date = models.DateField(blank=True, null=True, verbose_name="Data Expirare RCA")
 
     driver_name = models.CharField(max_length=100, blank=True, null=True)
     driver_cnp = models.CharField(max_length=13, blank=True, null=True)
@@ -160,6 +163,8 @@ class CaseDocument(models.Model):
         ID_CARD = "CI", _("Buletin")
         DRIVERS_LICENSE = "PERMIS", _("Permis")
         CAR_REGISTRATION = "TALON", _("Talon")
+        CAR_IDENTITY = "CIV", _("Carte Identitate Vehicul")
+        VICTIM_RCA = "RCA", _("RCA Păgubit")
         ACCIDENT_REPORT = "AMIABILA", _("Amiabilă / PV Poliție")
         REPAIR_AUTH = "AUT_REP", _("Autorizație Reparație")
         DAMAGE_PHOTO = "PHOTO", _("Poză Daună / Video")

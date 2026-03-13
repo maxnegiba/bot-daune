@@ -124,7 +124,7 @@ class DocumentAnalyzer:
            - Nu este nevoie să extragi date specifice (nr. înmatriculare etc.) din aceste poze, doar confirmă tipul.
 
         TIPURI ACCEPTATE (tip_document):
-        ["CI", "PERMIS", "TALON", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "FOTO_AUTO", "PV_POLITIE", "ALTELE"]
+        ["CI", "PERMIS", "TALON", "CIV", "RCA_PAGUBIT", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "FOTO_AUTO", "PV_POLITIE", "ALTELE"]
 
         EXTRAGERE DATE (date_extrase):
 
@@ -163,7 +163,19 @@ class DocumentAnalyzer:
            - 'marca': Marca vehiculului (ex: VW, Ford).
            - 'model': Modelul vehiculului (ex: Golf, Focus).
 
-        6. PENTRU PROCES VERBAL POLIȚIE / ANEXA 2 (PV_POLITIE):
+        6. PENTRU CARTEA DE IDENTITATE A VEHICULULUI (CIV):
+           - 'vin': Serie Șasiu.
+           - 'marca': Marca vehiculului.
+           - 'model': Modelul vehiculului.
+           - 'nr_auto': Nr. Înmatriculare (dacă este menționat, uneori este trecut cu pixul sau pe o anexă).
+
+        7. PENTRU POLIȚA RCA A PĂGUBITULUI (RCA_PAGUBIT):
+           - 'nr_polita': Numărul poliței de asigurare.
+           - 'asigurator': Societatea de asigurare.
+           - 'data_expirare': Data expirării poliței.
+           - 'nr_auto': Nr. Înmatriculare al vehiculului asigurat.
+
+        8. PENTRU PROCES VERBAL POLIȚIE / ANEXA 2 (PV_POLITIE):
            - 'data_accident': Data evenimentului (ex: 20.05.2023).
            - Vehicul A (De regulă Victima / Păgubitul):
              - 'nr_auto_a': Nr. Înmatriculare.
