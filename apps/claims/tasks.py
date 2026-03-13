@@ -474,15 +474,44 @@ def check_email_replies_task():
                                     case.last_email_message_id = msg_id
                                     case.save()
 
-                                # Parsăm body
+                                # Parsăm body și extragem atașamente
                                 body = ""
+                                downloaded_attachments = []
+
                                 if msg.is_multipart():
                                     for part in msg.walk():
-                                        if part.get_content_type() == "text/plain":
+                                        content_type = part.get_content_type()
+                                        content_disposition = str(part.get("Content-Disposition"))
+
+                                        # Extragere Text
+                                        if content_type == "text/plain" and "attachment" not in content_disposition:
                                             payload = part.get_payload(decode=True)
                                             if payload:
                                                 body = payload.decode(errors="ignore")
-                                                break
+
+                                        # Extragere Atașamente
+                                        elif "attachment" in content_disposition or part.get_filename():
+                                            filename = part.get_filename()
+                                            if filename:
+                                                payload = part.get_payload(decode=True)
+                                                if payload:
+                                                    from django.core.files.base import ContentFile
+
+                                                    # Salvăm în model
+                                                    doc = CaseDocument.objects.create(
+                                                        case=case,
+                                                        doc_type=CaseDocument.DocType.UNKNOWN,
+                                                        ocr_data={}
+                                                    )
+
+                                                    # Nume fișier unic
+                                                    clean_name = f"email_{case.id}_{filename}".replace(" ", "_")
+                                                    doc.file.save(clean_name, ContentFile(payload))
+
+                                                    downloaded_attachments.append(doc)
+
+                                                    # Declanșăm OCR
+                                                    analyze_document_task.delay(doc.id)
                                 else:
                                     payload = msg.get_payload(decode=True)
                                     if payload:
@@ -533,8 +562,19 @@ def check_email_replies_task():
                                     print(
                                         f"ℹ️ Mesaj info pentru {case.id} -> Forward WhatsApp"
                                     )
+                                    # Generare Link-uri pt atașamente dacă e cazul
+                                    attachments_info = ""
+                                    if downloaded_attachments:
+                                        attachments_info = "\n\n📄 **Documente atașate:**\n"
+                                        domain = settings.APP_DOMAIN.rstrip("/")
+                                        media_url_path = settings.MEDIA_URL.strip("/")
+                                        for d in downloaded_attachments:
+                                            url = f"{domain}/{media_url_path}/{d.file.name}"
+                                            attachments_info += f"- {url}\n"
+
                                     msg_forward = (
-                                        f"📩 Mesaj nou de la asigurator:\n\n{body[:800]}...\n\n"
+                                        f"📩 Mesaj nou de la asigurator:\n\n{body[:800]}...\n"
+                                        f"{attachments_info}\n"
                                         "👉 Răspunde aici (text sau poze) și voi trimite răspunsul tău direct la asigurator."
                                     )
                                     client.send_text(recipient, msg_forward)
