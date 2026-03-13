@@ -1,6 +1,21 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from .models import CaseDocument, InvolvedVehicle
+from .models import Case, CaseDocument, InvolvedVehicle
+from .tasks import send_admin_new_case_email_task
+
+
+from django.conf import settings
+
+@receiver(post_save, sender=Case)
+def notify_admin_new_case(sender, instance, created, **kwargs):
+    """
+    Trimite un email catre admin (office@aprca.ro) cand se creeaza un dosar nou.
+    """
+    if created:
+        if getattr(settings, 'TESTING', False):
+            send_admin_new_case_email_task(instance.id)
+        else:
+            send_admin_new_case_email_task.delay(instance.id)
 
 
 @receiver(post_save, sender=CaseDocument)

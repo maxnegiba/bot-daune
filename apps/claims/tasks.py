@@ -720,3 +720,47 @@ def relay_message_to_insurer_task(case_id, message_text, media_urls=None):
 
     except Exception as e:
         print(f"Eroare relay email: {e}")
+
+@shared_task
+def send_admin_new_case_email_task(case_id):
+    """
+    Trimite un email catre office@aprca.ro cand se deschide un dosar nou.
+    """
+    try:
+        case = Case.objects.get(id=case_id)
+        client = case.client
+        target_email = "office@aprca.ro"
+
+        # Cautam vehiculul pentru a lua numarul de inmatriculare, daca exista deja
+        victim_vehicle = case.vehicles.filter(role=InvolvedVehicle.Role.VICTIM).first()
+        plate_info = f"Număr Auto: {victim_vehicle.license_plate}" if victim_vehicle and victim_vehicle.license_plate else "Număr Auto: N/A"
+
+        subject = f"Notificare: Dosar nou deschis de {client.full_name or client.phone_number}"
+
+        body = f"""
+        Salut,
+
+        Un dosar nou a fost deschis in sistem.
+
+        Detalii client:
+        Nume: {client.full_name or '-'}
+        Telefon: {client.phone_number}
+        {plate_info}
+
+        Poti vizualiza dosarul in panoul de administrare.
+
+        Cu stima,
+        Echipa Auto Daune
+        """
+
+        email = EmailMessage(
+            subject=subject,
+            body=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[target_email]
+        )
+        email.send()
+        print(f"✅ Email de notificare dosar nou trimis pentru dosar {case.id}")
+
+    except Exception as e:
+        print(f"❌ Eroare la trimiterea emailului de notificare dosar nou: {e}")
