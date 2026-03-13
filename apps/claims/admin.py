@@ -80,7 +80,6 @@ class CaseAdmin(ModelAdmin):
         "client__phone_number",
         "client__first_name",
         "client__last_name",
-        "id",
     )
 
     def get_search_results(self, request, queryset, search_term):
