@@ -12,3 +12,4 @@ whitenoise
 reportlab
 weasyprint
 Pillow
+PyMuPDF

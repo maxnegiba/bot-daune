@@ -148,7 +148,9 @@ class FlowManager:
                     if "video" in mime_type or ext in ["mp4", "mov", "avi", "3gp"]:
                          is_video = True
                          ext = "mp4" # Forțăm extensia
-                    elif ext not in ["jpeg", "jpg", "png", "pdf"]:
+                    elif ext == "pdf" or "pdf" in mime_type:
+                         ext = "pdf"
+                    elif ext not in ["jpeg", "jpg", "png"]:
                          ext = "jpg"
 
                     file_name = f"{self.case.id}_{os.path.basename(url)}.{ext}"

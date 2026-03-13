@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import io
+import fitz  # PyMuPDF
 from PIL import Image, ImageOps
 from openai import OpenAI
 from django.conf import settings
@@ -18,6 +19,23 @@ class DocumentAnalyzer:
         try:
             with open(image_path, "rb") as image_file:
                 original_bytes = image_file.read()
+
+            # If it's a PDF, convert the first page to a PNG byte stream
+            if image_path.lower().endswith(".pdf"):
+                try:
+                    doc = fitz.open("pdf", original_bytes)
+                    if doc.page_count > 0:
+                        page = doc.load_page(0)
+                        # Zoom slightly for better OCR resolution
+                        zoom_matrix = fitz.Matrix(2.0, 2.0)
+                        pix = page.get_pixmap(matrix=zoom_matrix)
+                        original_bytes = pix.tobytes("png")
+                        doc.close()
+                    else:
+                        raise Exception("PDF gol (0 pagini).")
+                except Exception as e:
+                    logger.error(f"Eroare procesare PDF: {e}")
+                    return {"tip_document": "UNKNOWN", "date_extrase": {}, "error": f"PDF processing error: {str(e)}"}
 
             # Create PIL Image for splitting
             img = Image.open(io.BytesIO(original_bytes))
