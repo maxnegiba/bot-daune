@@ -124,7 +124,7 @@ class DocumentAnalyzer:
            - Nu este nevoie să extragi date specifice (nr. înmatriculare etc.) din aceste poze, doar confirmă tipul.
 
         TIPURI ACCEPTATE (tip_document):
-        ["CI", "PERMIS", "TALON", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "FOTO_AUTO", "ALTELE"]
+        ["CI", "PERMIS", "TALON", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "FOTO_AUTO", "PV_POLITIE", "ALTELE"]
 
         EXTRAGERE DATE (date_extrase):
 
@@ -163,10 +163,25 @@ class DocumentAnalyzer:
            - 'marca': Marca vehiculului (ex: VW, Ford).
            - 'model': Modelul vehiculului (ex: Golf, Focus).
 
+        6. PENTRU PROCES VERBAL POLIȚIE / ANEXA 2 (PV_POLITIE):
+           - 'data_accident': Data evenimentului (ex: 20.05.2023).
+           - Vehicul A (De regulă Victima / Păgubitul):
+             - 'nr_auto_a': Nr. Înmatriculare.
+             - 'nume_proprietar_a': Numele proprietarului.
+             - 'nume_sofer_a': Numele conducătorului auto.
+             - 'avarii_a': Avariile vehiculului (ex: "bara fata, far stanga").
+           - Vehicul B (De regulă Vinovatul, menționat la sancțiuni):
+             - 'nr_auto_b': Nr. Înmatriculare.
+             - 'nume_proprietar_b': Numele proprietarului.
+             - 'nume_sofer_b': Numele conducătorului auto (vinovatului).
+             - 'avarii_b': Avariile vehiculului.
+             - 'asigurator_b': Societatea de asigurări (RCA).
+
         ANALIZA ACCIDENT (analiza_accident) - Folosește Imaginea 1 (Completă):
         - Analizează schița și bifelor de la rubrica 12.
         - Determină cine este vinovat: "A", "B", "Comun" sau "Neculpa".
         - REGULA PRIORITARĂ: Dacă un vehicul (ex: A) bifează DOAR căsuța 9 ("Deplasându-se în același sens") iar celălalt (ex: B) bifează căsuța 11 ("Depășind") sau 10 ("Schimbând banda"), VINOVAT este cel care face manevra activă (B).
+        - PENTRU PV_POLITIE: Returnează "vinovat_probabil": "B" (Dacă vehiculul B a fost sancționat/găsit vinovat conform PV) sau "A" în caz contrar.
 
         Răspunde STRICT în format JSON:
         {
@@ -223,7 +238,7 @@ class DocumentAnalyzer:
 
     @staticmethod
     def _normalize_data(data):
-        if not data or "date_extrase" not in data:
+        if not data or "date_extrase" not in data or data["date_extrase"] is None:
             return data
 
         extracted = data["date_extrase"]
