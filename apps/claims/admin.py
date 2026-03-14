@@ -21,19 +21,26 @@ class ClientAdmin(ModelAdmin):
     search_fields = ("phone_number", "first_name", "last_name", "cnp")
 
     def get_search_results(self, request, queryset, search_term):
+        if not search_term:
+            return queryset, False
+
+        # Apply base search logic (phone, names, etc.)
         result_qs, use_distinct = super().get_search_results(request, queryset, search_term)
 
-        if search_term:
-            # Custom search for Victim License Plate
-            # Căutăm doar în vehiculele cu rol de VICTIMĂ (așa cum a cerut utilizatorul)
-            victim_plate_q = Q(cases__vehicles__role=InvolvedVehicle.Role.VICTIM) & Q(
-                cases__vehicles__license_plate__icontains=search_term
-            )
-            custom_qs = queryset.filter(victim_plate_q)
-            result_qs = result_qs | custom_qs
-            return result_qs.distinct(), use_distinct
+        # Custom search for Victim License Plate
+        # Căutăm doar în vehiculele cu rol de VICTIMĂ (așa cum a cerut utilizatorul)
+        victim_plate_q = Q(cases__vehicles__role=InvolvedVehicle.Role.VICTIM, cases__vehicles__license_plate__icontains=search_term)
 
-        return result_qs, use_distinct
+        # In PostgreSQL, unioning (|) a queryset with a distinct UUID can cause issues.
+        # So we filter directly combining the super() results with our custom Q.
+
+        # Super() already filtered result_qs, so we can't easily OR it with the original queryset
+        # unless we do it this way:
+        combined_qs = queryset.filter(
+            Q(pk__in=result_qs.values('pk')) | victim_plate_q
+        ).distinct()
+
+        return combined_qs, True
 
 
 class InvolvedVehicleInline(TabularInline):
@@ -83,18 +90,21 @@ class CaseAdmin(ModelAdmin):
     )
 
     def get_search_results(self, request, queryset, search_term):
+        if not search_term:
+            return queryset, False
+
+        # Apply base search logic (phone, names, etc.)
         result_qs, use_distinct = super().get_search_results(request, queryset, search_term)
 
-        if search_term:
-            # Custom search for Victim License Plate in Case
-            victim_plate_q = Q(vehicles__role=InvolvedVehicle.Role.VICTIM) & Q(
-                vehicles__license_plate__icontains=search_term
-            )
-            custom_qs = queryset.filter(victim_plate_q)
-            result_qs = result_qs | custom_qs
-            return result_qs.distinct(), use_distinct
+        # Custom search for Victim License Plate in Case
+        victim_plate_q = Q(vehicles__role=InvolvedVehicle.Role.VICTIM, vehicles__license_plate__icontains=search_term)
 
-        return result_qs, use_distinct
+        # Combine the super() search results with our custom victim plate query safely
+        combined_qs = queryset.filter(
+            Q(pk__in=result_qs.values('pk')) | victim_plate_q
+        ).distinct()
+
+        return combined_qs, True
 
     # Adăugăm Inline-ul de Loguri pentru a vedea chat-ul direct în dosar
     inlines = [InvolvedVehicleInline, CaseDocumentInline, CommunicationLogInline]
