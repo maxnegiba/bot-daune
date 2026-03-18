@@ -246,6 +246,19 @@ def chat_send(request):
     return JsonResponse({"success": True})
 
 
+@rate_limit(rate="10/m")
+def chat_logout(request):
+    """
+    Log out explicit pentru a șterge sesiunea.
+    CSRF protejat.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    request.session.flush()
+    return JsonResponse({"success": True})
+
+
 @rate_limit(rate="120/m", key_func=get_session_key) # Polling rapid
 def chat_poll(request):
     """
