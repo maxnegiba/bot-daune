@@ -227,12 +227,18 @@
         }
     }
 
-    function logout() {
-        // Opțional: Putem face un call la backend pentru logout
-        // Deocamdată doar reîncărcăm pagina, backend-ul va păstra sesiunea.
-        // Dacă userul vrea să iasă explicit, ar trebui să ștergem sesiunea.
-        // Pentru simplitate, doar reload page.
-        location.reload();
+    async function logout() {
+        try {
+            await fetch('/bot/chat/logout/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCookie('csrftoken') }
+            });
+        } catch (e) {
+            console.error("Logout error:", e);
+        } finally {
+            localStorage.removeItem('phone');
+            location.reload();
+        }
     }
 
     // --- MESSAGING ---
