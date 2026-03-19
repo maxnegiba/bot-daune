@@ -11,6 +11,8 @@ class PhotoLogicTestCase(TestCase):
         # Pre-fill required docs so we only test the photo logic
         self.case.has_id_card = True
         self.case.has_car_coupon = True
+        self.case.has_car_identity = True
+        self.case.has_victim_rca = True
         self.case.has_accident_report = True
         self.case.save()
 

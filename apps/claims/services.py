@@ -267,6 +267,104 @@ class DocumentAnalyzer:
             return {"tip_document": "UNKNOWN", "date_extrase": {}, "error": str(e)}
 
     @staticmethod
+    def analyze_multiple(image_paths):
+        """
+        Analyzes a group of images together, expecting them to potentially represent
+        multiple pages of the same document (e.g., CIV).
+        """
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+        content = [
+            {
+                "type": "text",
+                "text": """
+        Ești un expert în asigurări auto și procesare de documente (OCR), specializat pe documente românești.
+        Ai primit mai multe imagini simultan. Aceste imagini reprezintă probabil DIFERITE PAGINI SAU SECȚIUNI ALE ACELUIAȘI DOCUMENT (cum ar fi "Cartea de Identitate a Vehiculului" - CIV, care este pliată și fotografiată pe bucăți).
+
+        SARCINA TA:
+        - Analizează toate imaginile împreună ca un tot unitar.
+        - Identifică tipul documentului asamblat. Dacă măcar una din imagini este clar o parte din CIV (Cartea Mașinii) și celelalte par a fi celelalte pagini ale CIV-ului, returnează tipul "CIV".
+        - Extrage datele relevante coroborând informațiile din toate paginile.
+
+        TIPURI ACCEPTATE (tip_document):
+        ["CI", "PERMIS", "TALON", "CIV", "RCA_PAGUBIT", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "FOTO_AUTO", "PV_POLITIE", "ALTELE", "UNKNOWN"]
+
+        EXTRAGERE DATE (date_extrase) - PENTRU CARTEA DE IDENTITATE A VEHICULULUI (CIV):
+        - 'vin': Serie Șasiu (de obicei se găsește pe prima pagină a CIV).
+        - 'marca': Marca vehiculului.
+        - 'model': Modelul vehiculului.
+        - 'nr_auto': Nr. Înmatriculare (dacă este menționat, uneori pe anexe).
+
+        Răspunde STRICT în format JSON:
+        {
+            "tip_document": "CIV",
+            "date_extrase": { "vin": "...", "marca": "...", "model": "..." }
+        }
+        """
+            }
+        ]
+
+        # Process each image and append to content
+        for path in image_paths:
+            try:
+                with open(path, "rb") as image_file:
+                    original_bytes = image_file.read()
+
+                # Handling PDF fallback just in case
+                if path.lower().endswith(".pdf"):
+                    doc = fitz.open("pdf", original_bytes)
+                    if doc.page_count > 0:
+                        page = doc.load_page(0)
+                        zoom_matrix = fitz.Matrix(2.0, 2.0)
+                        pix = page.get_pixmap(matrix=zoom_matrix)
+                        original_bytes = pix.tobytes("png")
+                    doc.close()
+
+                img = Image.open(io.BytesIO(original_bytes))
+                if img.mode == 'RGBA':
+                    img = img.convert('RGB')
+                img = ImageOps.autocontrast(img)
+
+                buffered = io.BytesIO()
+                img.save(buffered, format="JPEG")
+                b64_img = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{b64_img}"
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Eroare preluare imagine in analiză multiplă {path}: {e}")
+                continue
+
+        if len(content) == 1:
+             return {"tip_document": "UNKNOWN", "date_extrase": {}, "error": "No valid images could be loaded."}
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": content,
+                    }
+                ],
+                max_tokens=1000,
+                temperature=0.0,
+                response_format={"type": "json_object"},
+            )
+
+            response_content = response.choices[0].message.content
+            data = json.loads(response_content)
+            return DocumentAnalyzer._normalize_data(data)
+
+        except Exception as e:
+            logger.error(f"Eroare OpenAI analiză multiplă: {e}")
+            return {"tip_document": "UNKNOWN", "date_extrase": {}, "error": str(e)}
+
+    @staticmethod
     def _normalize_data(data):
         if not data or "date_extrase" not in data or data["date_extrase"] is None:
             return data

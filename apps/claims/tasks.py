@@ -28,12 +28,40 @@ def analyze_document_task(document_id):
         result = DocumentAnalyzer.analyze(doc.file.path)
         print(f"🤖 Rezultat AI: {result}")
 
+        # Mapăm tipul primit de la AI la Enum-ul din Django
+        tip_ai = result.get("tip_document", "").upper()
+
+        # Treat 'UNKNOWN' as failure and queue for multi-image logic
+        if tip_ai == "UNKNOWN":
+            from django.core.cache import cache
+
+            # Save empty data to indicate processing finished but failed
+            doc.ocr_data = {}
+            doc.doc_type = CaseDocument.DocType.UNKNOWN
+            doc.save()
+
+            cache_key = f"civ_wait_notified_{case.id}"
+
+            # Check if we already notified the user recently
+            if not cache.get(cache_key):
+                client = get_client(case)
+                client.send_text(
+                    case,
+                    "⚠️ Nu am putut identifica complet acest document. Dacă are mai multe pagini (cum ar fi CIV), te rog încarcă restul acum. Voi aștepta 15 secunde..."
+                )
+                # Set cache to avoid spamming the user
+                cache.set(cache_key, True, timeout=120)
+
+            # Queue the multi-image fallback check to run in 15 seconds
+            # Use import delay locally to avoid circular dependencies if any
+            from apps.claims.tasks import process_grouped_unknowns_task
+            process_grouped_unknowns_task.apply_async(args=[case.id], countdown=15)
+
+            return
+
         # 2. Salvare date OCR
         # NOTA: Acest save() va declanșa signals.py care populează vehiculele!
         doc.ocr_data = result
-
-        # Mapăm tipul primit de la AI la Enum-ul din Django
-        tip_ai = result.get("tip_document", "").upper()
 
         # Folosim update() atomic pentru a evita Race Condition pe flag-uri
         updates = {}
@@ -184,11 +212,17 @@ def check_status_and_notify(case, processed_doc=None):
     for d in recent_docs:
         # Verificăm dacă e un tip valid sau Unknown
         if d.doc_type == CaseDocument.DocType.UNKNOWN:
-            # E posibil să fie un document nerelevant sau eroare AI
-            fname = os.path.basename(d.file.name)
-            error_messages.append(
-                f"⚠️ Nu am putut identifica documentul '{fname}'. Te rog încarcă doar: Buletin, Talon, Amiabilă sau Video."
-            )
+            # Check cache to avoid spamming the generic error if the user is already waiting
+            # for the multi-image processor to give a final verdict.
+            from django.core.cache import cache
+            cache_key = f"civ_wait_notified_{case.id}"
+
+            # If the wait notification is currently active, we suppress the immediate rejection message.
+            if not cache.get(cache_key):
+                fname = os.path.basename(d.file.name)
+                error_messages.append(
+                    f"⚠️ Nu am putut identifica documentul '{fname}'. Te rog încarcă doar: Buletin, Talon, Amiabilă sau Video."
+                )
         else:
             validated_names.append(d.get_doc_type_display())
 
@@ -262,6 +296,93 @@ def check_status_and_notify(case, processed_doc=None):
 
             full_msg = "\n".join(parts)
             client.send_text(recipient, full_msg)
+
+
+# --- TASK 1.5: Fallback Multi-Image Processing for CIV/Unknowns ---
+@shared_task
+def process_grouped_unknowns_task(case_id):
+    """
+    Called 15 seconds after an UNKNOWN document is uploaded.
+    Collects all UNKNOWN documents uploaded in the last few minutes and analyzes them together.
+    """
+    from django.utils import timezone
+    import datetime
+    from django.core.cache import cache
+
+    try:
+        case = Case.objects.get(id=case_id)
+
+        # Căutăm documente "UNKNOWN" recente
+        recent_threshold = timezone.now() - datetime.timedelta(minutes=5)
+        unknown_docs = CaseDocument.objects.filter(
+            case=case,
+            doc_type=CaseDocument.DocType.UNKNOWN,
+            uploaded_at__gte=recent_threshold
+        )
+
+        if unknown_docs.count() < 2:
+            # Clear cache so normal error messages resume if it was just one bad photo
+            cache.delete(f"civ_wait_notified_{case.id}")
+            # Do nothing if there's only 1 document (it was already analyzed individually and failed)
+            return
+
+        print(f"--- [AI WORKER MULTI-IMAGE] Analizez {unknown_docs.count()} poze pentru dosar {case.id} ---")
+
+        image_paths = [doc.file.path for doc in unknown_docs if doc.file]
+
+        if not image_paths:
+            return
+
+        result = DocumentAnalyzer.analyze_multiple(image_paths)
+        print(f"🤖 Rezultat AI Multi-Image: {result}")
+
+        tip_ai = result.get("tip_document", "").upper()
+
+        # Dacă a reușit să extragă CIV (sau altceva)
+        if tip_ai != "UNKNOWN":
+            updates = {}
+            if "CIV" in tip_ai:
+                doc_type = CaseDocument.DocType.CAR_IDENTITY
+                updates["has_car_identity"] = True
+            elif "AMIABILA" in tip_ai or "CONSTATARE" in tip_ai:
+                doc_type = CaseDocument.DocType.ACCIDENT_REPORT
+                updates["has_accident_report"] = True
+            else:
+                # Putem trata și alte documente dacă AI-ul le recunoaște
+                doc_type = CaseDocument.DocType.UNKNOWN # Fallback sigur
+
+            # Update all unknown docs to the new type so they don't get re-processed
+            # We save the OCR data only to the first doc for simplicity
+            first_doc = unknown_docs.first()
+            if doc_type != CaseDocument.DocType.UNKNOWN:
+                for doc in unknown_docs:
+                    doc.doc_type = doc_type
+                    if doc.id == first_doc.id:
+                        doc.ocr_data = result
+                    else:
+                        doc.ocr_data = {"note": "Atașat la documentul principal."}
+                    doc.save()
+
+            if updates:
+                Case.objects.filter(pk=case.pk).update(**updates)
+
+            # Clear cache so we can resume normal flow
+            cache.delete(f"civ_wait_notified_{case.id}")
+
+            # Notificăm succesul/statusul general
+            check_status_and_notify(case)
+        else:
+            # Eșec și după analiza combinată
+            cache.delete(f"civ_wait_notified_{case.id}")
+            client = get_client(case)
+            client.send_text(
+                case,
+                "⚠️ Analiza combinată a pozelor nu a reușit să identifice un document valid (CIV etc.). Te rog reîncearcă cu poze mai clare."
+            )
+
+    except Exception as e:
+        print(f"--- [AI MULTI-IMAGE ERROR] {e} ---")
+        cache.delete(f"civ_wait_notified_{case_id}")
 
 
 # --- TASK 2: Procesare Output (Trimitere Email Asigurator) ---
