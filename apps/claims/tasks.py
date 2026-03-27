@@ -66,7 +66,11 @@ def analyze_document_task(document_id):
         # Folosim update() atomic pentru a evita Race Condition pe flag-uri
         updates = {}
 
-        if "CI" in tip_ai or "BULETIN" in tip_ai:
+        if "CIV" in tip_ai:
+            doc.doc_type = CaseDocument.DocType.CAR_IDENTITY
+            updates["has_car_identity"] = True
+
+        elif "CI" in tip_ai or "BULETIN" in tip_ai:
             doc.doc_type = CaseDocument.DocType.ID_CARD
             updates["has_id_card"] = True
 
@@ -91,10 +95,6 @@ def analyze_document_task(document_id):
         elif "TALON" in tip_ai:
             doc.doc_type = CaseDocument.DocType.CAR_REGISTRATION
             updates["has_car_coupon"] = True
-
-        elif "CIV" in tip_ai:
-            doc.doc_type = CaseDocument.DocType.CAR_IDENTITY
-            updates["has_car_identity"] = True
 
         elif "RCA_PAGUBIT" in tip_ai:
             doc.doc_type = CaseDocument.DocType.VICTIM_RCA

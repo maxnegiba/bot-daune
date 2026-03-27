@@ -30,8 +30,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-x+&u)bqe^wqo)ass3l16+^j-4o
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
-
+ALLOWED_HOSTS = ['*']
 # Security Settings for Production
 if not DEBUG:
     SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "True") == "True"
@@ -153,14 +152,15 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 
 # Email Configuration
+# Email Configuration
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.sendgrid.net")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False") == "True"  # <--- LINIE NOUĂ IMPORTANTĂ
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "office@autodaune.ro")
-
 
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -207,8 +207,8 @@ if not DEBUG:
 # Uploads (Allow up to 100MB per file)
 # Django default is 2.5MB for DATA and streaming for FILES.
 # We ensure limits are generous.
-DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB for non-file data
-FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024   # 5 MB before streaming to disk
+DATA_UPLOAD_MAX_MEMORY_SIZE = 150 * 1024 * 1024  # 10 MB for non-file data
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 5 MB before streaming to disk
 
 
 # Twilio Configuration

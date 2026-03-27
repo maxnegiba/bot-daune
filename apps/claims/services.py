@@ -141,10 +141,12 @@ class DocumentAnalyzer:
            - Dacă imaginea este o fotografie a unui vehicul (avariat sau nu) și pare a fi făcută la fața locului sau pentru dosarul de daună, clasific-o ca 'FOTO_AUTO'.
            - Nu este nevoie să extragi date specifice (nr. înmatriculare etc.) din aceste poze, doar confirmă tipul.
 
-        INSTRUCȚIUNI DE DEZAMBIGUIZARE BULETIN (CI) vs CARTEA MAȘINII (CIV):
-           - ATENȚIE MAXIMĂ: Nu confunda "Cartea de Identitate a persoanei" (CI/Buletin) cu "Cartea de Identitate a Vehiculului" (CIV).
-           - Dacă documentul conține cuvintele "CARTEA DE IDENTITATE A VEHICULULUI", "Serie Șasiu", "Marca", "Model" sau alte date tehnice auto, este OBLIGATORIU de tip "CIV".
-           - Doar documentele care identifică strict o persoană fizică (conținând "CARTEA DE IDENTITATE", CNP, Adresa) sunt de tip "CI".
+        INSTRUCȚIUNI DE DEZAMBIGUIZARE ÎNTRE CI, CIV și TALON:
+           - ATENȚIE MAXIMĂ: Nu confunda "Cartea de Identitate" (CI/Buletin) a persoanei cu "Cartea de Identitate a Vehiculului" (CIV) sau cu "Certificatul de Înmatriculare" (TALON).
+           - BULETIN (CI): Identifică strict o persoană fizică ("CARTEA DE IDENTITATE", CNP, Adresa). Nu are date tehnice auto.
+           - TALON: Este "Certificatul de Înmatriculare". Are dimensiuni mai mici, format pe 3 pagini pliate, și conține cuvintele "CERTIFICAT DE ÎNMATRICULARE". Conține date tehnice auto (Marca, Model, VIN).
+           - CARTEA MAȘINII (CIV): Este documentul format A4 (adesea pliat) ce conține cuvintele "CARTEA DE IDENTITATE A VEHICULULUI". Conține date tehnice auto detaliate.
+           - REGULĂ: Doar prezența "Serie Șasiu", "Marca", "Model" NU înseamnă automat "CIV". Verifică titlul documentului: "CERTIFICAT DE ÎNMATRICULARE" = TALON, "CARTEA DE IDENTITATE A VEHICULULUI" = CIV.
 
         TIPURI ACCEPTATE (tip_document):
         ["CI", "PERMIS", "TALON", "CIV", "RCA_PAGUBIT", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "FOTO_AUTO", "PV_POLITIE", "ALTELE"]
@@ -293,10 +295,12 @@ class DocumentAnalyzer:
         - Identifică tipul documentului asamblat. Dacă măcar una din imagini este clar o parte din CIV (Cartea Mașinii) și celelalte par a fi celelalte pagini ale CIV-ului, returnează tipul "CIV".
         - Extrage datele relevante coroborând informațiile din toate paginile.
 
-        INSTRUCȚIUNI DE DEZAMBIGUIZARE BULETIN (CI) vs CARTEA MAȘINII (CIV):
-        - ATENȚIE MAXIMĂ: Nu confunda "Cartea de Identitate a persoanei" (CI/Buletin) cu "Cartea de Identitate a Vehiculului" (CIV).
-        - Dacă oricare din pagini conține cuvintele "CARTEA DE IDENTITATE A VEHICULULUI", "Serie Șasiu", "Marca", "Model" sau alte date tehnice auto, asamblarea este OBLIGATORIU de tip "CIV".
-        - Doar dacă toate paginile identifică strict o persoană fizică (conținând "CARTEA DE IDENTITATE", CNP, Adresa) ar fi de tip "CI" (ceea ce e puțin probabil pentru documente cu mai multe pagini, dar aplică regula).
+        INSTRUCȚIUNI DE DEZAMBIGUIZARE ÎNTRE CI, CIV și TALON:
+        - ATENȚIE MAXIMĂ: Nu confunda "Cartea de Identitate" (CI/Buletin) a persoanei cu "Cartea de Identitate a Vehiculului" (CIV) sau cu "Certificatul de Înmatriculare" (TALON).
+        - BULETIN (CI): Identifică strict o persoană fizică. Nu are date tehnice auto.
+        - TALON: Este "Certificatul de Înmatriculare". Are dimensiuni mai mici, format pe 3 pagini pliate, și conține cuvintele "CERTIFICAT DE ÎNMATRICULARE". Conține date tehnice auto (Marca, Model, VIN).
+        - CARTEA MAȘINII (CIV): Este documentul format A4 (adesea pliat) ce conține cuvintele "CARTEA DE IDENTITATE A VEHICULULUI". Conține date tehnice auto detaliate.
+        - REGULĂ: Doar prezența "Serie Șasiu", "Marca", "Model" NU înseamnă automat "CIV". Verifică titlul documentului asamblat: "CERTIFICAT DE ÎNMATRICULARE" = TALON, "CARTEA DE IDENTITATE A VEHICULULUI" = CIV.
 
         TIPURI ACCEPTATE (tip_document):
         ["CI", "PERMIS", "TALON", "CIV", "RCA_PAGUBIT", "AMIABILA", "PROCURA", "EXTRAS", "ACTE_VINOVAT", "FOTO_AUTO", "PV_POLITIE", "ALTELE", "UNKNOWN"]
