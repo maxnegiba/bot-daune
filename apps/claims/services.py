@@ -216,9 +216,11 @@ class DocumentAnalyzer:
              - 'avarii_b': Avariile vehiculului.
              - 'asigurator_b': Societatea de asigurări (RCA).
 
-        Răspunde STRICT în format JSON:
+        Răspunde STRICT în format JSON.
+
+        Exemplu de răspuns general:
         {
-            "tip_document": "AMIABILA",
+            "tip_document": "Numele_Tipului_Identificat",
             "date_extrase": { ... }
         }
         """
