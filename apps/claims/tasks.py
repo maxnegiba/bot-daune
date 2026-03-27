@@ -261,7 +261,33 @@ def check_status_and_notify(case, processed_doc=None):
     if case.stage == Case.Stage.COLLECTING_DOCS:
         if not missing:
             # TOTUL E COMPLET (DOCUMENTE)
-            if case.resolution_choice != Case.Resolution.UNDECIDED:
+            # Acum, inainte de a merge la Semnatura/Rezolutie, trebuie sa aflam asiguratorul vinovatului
+            guilty_vehicle = case.vehicles.filter(is_offender=True).first()
+            if not guilty_vehicle:
+                # Trecem in stadiul de selectare a asiguratorului vinovatului
+                case.stage = Case.Stage.SELECTING_GUILTY_INSURER
+                case.save()
+
+                # Extragem toti asiguratorii din baza de date pentru a-i afisa utilizatorului
+                from apps.claims.models import Insurer
+                all_sys_insurers = Insurer.objects.all().order_by('name')
+
+                if all_sys_insurers.exists():
+                    msg_parts = [
+                        "✅ Am primit toate documentele necesare!\n",
+                        "Te rog să îmi spui: **Care este asiguratorul vinovatului?**\n",
+                        "Răspunde cu **numele** asiguratorului de mai jos:\n"
+                    ]
+                    for idx, sys_in in enumerate(all_sys_insurers, 1):
+                        msg_parts.append(f"- {sys_in.name}")
+
+                    msg = "\n".join(msg_parts)
+                    client.send_text(recipient, msg)
+                else:
+                    msg = "✅ Am primit toate documentele necesare!\n\nTe rog să îmi scrii: **Care este asiguratorul vinovatului?**"
+                    client.send_text(recipient, msg)
+
+            elif case.resolution_choice != Case.Resolution.UNDECIDED:
                 case.stage = Case.Stage.SIGNING_MANDATE
                 case.save()
 

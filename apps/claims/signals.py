@@ -31,7 +31,6 @@ def process_ocr_data(sender, instance, created, **kwargs):
     case = instance.case
     doc_type = data.get("tip_document", "").upper()
     extracted = data.get("date_extrase", {})
-    analiza = data.get("analiza_accident", {})
 
     # --- LOGICA PENTRU AMIABILĂ / PV_POLITIE ---
     if "AMIABILA" in doc_type or "PV_POLITIE" in doc_type:
@@ -62,7 +61,7 @@ def process_ocr_data(sender, instance, created, **kwargs):
             license_plate=extracted.get("nr_auto_a"),
             vin=extracted.get("vin_a"),
             driver_name=extracted.get("nume_sofer_a"),
-            is_guilty_verdict=analiza.get("vinovat_probabil"),
+            is_guilty_verdict=None,
             insurance_company=extracted.get("asigurator_a"),
         )
 
@@ -73,7 +72,7 @@ def process_ocr_data(sender, instance, created, **kwargs):
             license_plate=extracted.get("nr_auto_b"),
             vin=extracted.get("vin_b"),
             driver_name=extracted.get("nume_sofer_b"),
-            is_guilty_verdict=analiza.get("vinovat_probabil"),
+            is_guilty_verdict=None,
             insurance_company=extracted.get("asigurator_b"),
         )
 

@@ -216,17 +216,10 @@ class DocumentAnalyzer:
              - 'avarii_b': Avariile vehiculului.
              - 'asigurator_b': Societatea de asigurări (RCA).
 
-        ANALIZA ACCIDENT (analiza_accident) - Folosește Imaginea 1 (Completă):
-        - Analizează schița și bifelor de la rubrica 12.
-        - Determină cine este vinovat: "A", "B", "Comun" sau "Neculpa".
-        - REGULA PRIORITARĂ: Dacă un vehicul (ex: A) bifează DOAR căsuța 9 ("Deplasându-se în același sens") iar celălalt (ex: B) bifează căsuța 11 ("Depășind") sau 10 ("Schimbând banda"), VINOVAT este cel care face manevra activă (B).
-        - PENTRU PV_POLITIE: Returnează "vinovat_probabil": "B" (Dacă vehiculul B a fost sancționat/găsit vinovat conform PV) sau "A" în caz contrar.
-
         Răspunde STRICT în format JSON:
         {
             "tip_document": "AMIABILA",
-            "date_extrase": { ... },
-            "analiza_accident": { "vinovat_probabil": "..." }
+            "date_extrase": { ... }
         }
         """
 
