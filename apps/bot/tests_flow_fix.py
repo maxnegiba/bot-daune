@@ -99,6 +99,6 @@ class FlowFixTestCase(TestCase):
         latest_msg = logs.first()
 
         self.assertIsNotNone(latest_msg)
-        self.assertIn("Am validat Buletin", latest_msg.content)
+        self.assertIn("Am validat: Buletin", latest_msg.content)
         self.assertIn("Mai am nevoie de", latest_msg.content)
         self.assertNotIn("Buletin (obligatoriu)", latest_msg.content) # Since we have it

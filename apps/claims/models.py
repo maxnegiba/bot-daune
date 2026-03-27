@@ -39,6 +39,7 @@ class Case(models.Model):
     class Stage(models.TextChoices):
         GREETING = "GREETING", _("1. Greeting / Alegere Flux")
         COLLECTING_DOCS = "DOCS", _("2. Colectare Documente")
+        SELECTING_GUILTY_INSURER = "GUILTY_INS", _("2.5 Alegere Asigurator Vinovat")
         SELECTING_RESOLUTION = "RES_SEL", _("3. Alegere Tip Despăgubire")
         SIGNING_MANDATE = "SIGN", _("4. Semnare Mandat")
         PROCESSING_INSURER = "INSURER", _("5. Discuție Asigurator (Email)")

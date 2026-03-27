@@ -49,6 +49,10 @@ class FlowManager:
                 # Altfel, verificăm statusul documentelor (poate userul întreabă ceva)
                 self._check_documents_status()
 
+        # --- ETAPA 2.5: SELECTING GUILTY INSURER ---
+        elif stage == Case.Stage.SELECTING_GUILTY_INSURER:
+            self._handle_guilty_insurer_selection(content)
+
         # --- ETAPA 3: SELECTING RESOLUTION (Legacy / Fallback) ---
         elif stage == Case.Stage.SELECTING_RESOLUTION:
             self._try_handle_resolution_text(content)
@@ -226,6 +230,103 @@ class FlowManager:
 
         return False
 
+    def _handle_guilty_insurer_selection(self, text):
+        # Utilizatorul a ales sau a tastat numele asiguratorului
+        from apps.claims.models import Insurer
+
+        selected_insurer = text.strip()
+
+        # Facem matching intre textul userului si asiguratorii din sistem sau cei de pe vehicule
+        # Ideea de baza: gasim care vehicul se potriveste cu acest asigurator.
+        # Daca nu reusim un match perfect, presupunem ca userul ne-a dat o informatie pretioasa si
+        # asociem asiguratorul vehiculului care nu este victima (daca exista doar unul),
+        # sau il marcam pe celalalt ca vinovat.
+
+        vehicles = list(self.case.vehicles.all())
+
+        # 1. Identificăm robust victima
+        victim = None
+        for v in vehicles:
+            if v.role == "VICTIM":
+                victim = v
+                break
+
+        # Fallback: Dacă nicio mașină nu are rol explicit, presupunem că mașina
+        # asociată cu numărul introdus de client e victima (cea mai veche, de obicei)
+        # sau măcar o marcăm cumva să avem o diferență
+        if not victim and vehicles:
+            # Sortăm pentru a fi determinist (prima creată)
+            sorted_vehicles = sorted(vehicles, key=lambda x: x.id)
+            victim = sorted_vehicles[0]
+
+        others = [v for v in vehicles if v != victim]
+
+        guilty_vehicle = None
+        matched_sys_name = None
+
+        # 2. Încercăm să rezolvăm selecția utilizatorului la un asigurator valid din sistem
+        all_sys = Insurer.objects.all()
+        for sys_in in all_sys:
+            keywords = [k.strip().lower() for k in sys_in.identifiers.split(",")]
+            if any(k in selected_insurer.lower() for k in keywords) or selected_insurer.lower() in sys_in.name.lower():
+                matched_sys_name = sys_in.name
+                break
+
+        # Dacă utilizatorul nu a scris un nume care se potrivește perfect, folosim ce a scris el
+        final_insurer_name = matched_sys_name if matched_sys_name else selected_insurer
+
+        # 3. Identificăm vehiculul vinovat
+
+        # Cazul A: Știm clar care sunt celelalte mașini.
+        # Căutăm printre mașinile non-victimă pe aceea care are numele de asigurator selectat (de la OCR)
+        for v in others:
+            if v.insurance_company_name:
+                if final_insurer_name.lower() in v.insurance_company_name.lower():
+                    guilty_vehicle = v
+                    break
+
+        # Cazul B: Dacă nu am găsit prin matching de OCR, dar avem o singură mașină "altul",
+        # e clar că ea este vinovata
+        if not guilty_vehicle and len(others) == 1:
+            guilty_vehicle = others[0]
+
+        # Cazul C: Dacă avem multiple altele și nu am putut face match, pur și simplu luăm prima "altă"
+        # (caz rar, înseamnă că sunt 3 mașini implicate și niciuna n-a scos asiguratorul la OCR)
+        if not guilty_vehicle and others:
+            guilty_vehicle = others[0]
+
+        # 4. Actualizăm starea
+        if guilty_vehicle:
+            # Resetează toți ceilalți la not offender
+            for v in vehicles:
+                 v.is_offender = False
+                 v.save()
+
+            guilty_vehicle.is_offender = True
+            guilty_vehicle.insurance_company_name = final_insurer_name
+            guilty_vehicle.save()
+            self.client.send_text(self.case, f"✅ Am înregistrat asiguratorul vinovatului: {final_insurer_name}.")
+        else:
+            # Fallback extrem dacă nu avem nicio mașină (teoretic imposibil dacă avem date din chat)
+            self.client.send_text(self.case, f"Am notat asiguratorul: {final_insurer_name}. Te rog contactează un operator pentru asistență suplimentară.")
+
+        # Acum mergem la urmatorul pas (Semnatura sau Alegere Rezolutie)
+        if self.case.resolution_choice != self.case.Resolution.UNDECIDED:
+            self.case.stage = self.case.Stage.SIGNING_MANDATE
+            self.case.save()
+            self._send_signature_link()
+        else:
+            # Trecem in stadiu de colectare docs ca sa lase _check_documents_status sa evalueze
+            # sau afisam direct butoanele
+            self.case.stage = self.case.Stage.COLLECTING_DOCS
+            self.case.save()
+            self.client.send_buttons(
+                self.case,
+                "Cum dorești să soluționezi dosarul?",
+                ["Regie Proprie", "Service Autorizat RAR", "Dauna Totala"]
+            )
+
+
     def _check_documents_status(self):
         missing = []
         if not self.case.has_id_card:
@@ -254,7 +355,16 @@ class FlowManager:
                  missing.append("Extras Cont Bancar (pt. Regie Proprie)")
 
         if not missing:
-            # Avem actele. Avem rezoluția?
+            # Avem actele.
+            # Trebuie sa verificam daca am ales deja asiguratorul vinovatului
+            guilty_vehicle = self.case.vehicles.filter(is_offender=True).first()
+            if not guilty_vehicle:
+                 # Inca nu am ales. Trecem la etapa asta. Acest cod e de siguranta,
+                 # task-ul celery se ocupa de obicei de el. Daca am ajuns aici direct din webchat text (mai rar).
+                 from apps.claims.tasks import check_status_and_notify
+                 check_status_and_notify(self.case)
+                 return
+
             if self.case.resolution_choice != Case.Resolution.UNDECIDED:
                 # TOTUL GATA -> Mandat
                 self.case.stage = Case.Stage.SIGNING_MANDATE
