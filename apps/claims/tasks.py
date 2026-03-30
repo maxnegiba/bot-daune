@@ -469,26 +469,53 @@ def send_claim_email_task(case_id):
         else:
             print("⚠️ Nu am detectat numele asiguratorului. Trimit la fallback.")
 
+        # --- PASUL 1.5: Verificare Date Vehicul Victimă ---
+        victim_vehicle = case.vehicles.filter(role=InvolvedVehicle.Role.VICTIM).first()
+
+        if not victim_vehicle or not victim_vehicle.make or not victim_vehicle.license_plate:
+            # Lipsesc date despre victimă. Notificăm adminul și oprim trimiterea la asigurator
+            print(f"⚠️ [EMAIL WORKER] Date lipsă pentru vehiculul victimei. Trimit alertă către admin.")
+
+            missing_details = []
+            if not victim_vehicle:
+                missing_details.append("Vehiculul victimei nu este definit (role=VICTIM)")
+            else:
+                if not victim_vehicle.make:
+                    missing_details.append("Marca vehiculului lipsă")
+                if not victim_vehicle.license_plate:
+                    missing_details.append("Numărul de înmatriculare lipsă")
+
+            alert_subject = f"⚠️ Intervenție Umană Necesară: Dosar {str(case.id)[:8]}"
+            alert_body = f"""Salut,
+
+Dosarul {str(case.id)[:8]} (Client: {client.full_name}) nu a putut fi trimis la asigurator din cauza lipsei următoarelor informații esențiale:
+
+{chr(10).join(['- ' + detail for detail in missing_details])}
+
+Te rugăm să completezi aceste date în baza de date și să re-inițiezi trimiterea emailului.
+"""
+            EmailMessage(
+                subject=alert_subject,
+                body=alert_body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=["office@autodaune.ro"],
+            ).send()
+
+            return  # Stop execution, nu mai trimitem la asigurator
+
         # --- PASUL 2: Construire Email ---
         subject = f"Avizare Dauna Auto - {client.full_name} - Dosar {str(case.id)[:8]}"
 
-        body = f"""
-        Buna ziua,
-        
-        În atenția departamentului de daune {target_name},
-        
-        Prin prezenta, vă transmitem solicitarea de deschidere dosar de daună pentru clientul nostru:
-        Nume: {client.full_name}
-        CNP: {client.cnp or '-'}
-        Telefon: {client.phone_number}
-        
-        Atașat regăsiți documentele necesare instrumentării dosarului (Mandat, Amiabilă, Acte, Foto).
-        
-        Vă rugăm să ne confirmați primirea și să ne comunicați numărul de dosar alocat prin Reply la acest email.
-        
-        Cu stimă,
-        Echipa ASociatia PAgubitilor RCA
-        """
+        body = f"""Buna ziua,
+
+Subscrisa, Asociația Păgubiților RCA, prin președinte Munteanu Leonard Petre, in calitate de reprezentant al păgubitului(ei) {client.full_name}, conform mandatului din atașament, in temeiul prevederilor Art. 2 Alin (7) din L132/2017 va remitem prezenta,
+
+___________AVIZARE DAUNA RCA__________
+
+prin care va solicitam respectuos sa dispuneți efectuarea constatării avariilor si prejudiciilor la AUTO avariat marca {victim_vehicle.make}, cu nr. înmatriculare {victim_vehicle.license_plate}, cf. documentelor din attach, in conformitate cu prevederile Art. 18 Alin (4) si Alin (5) din N20/2017ASF.
+Solicităm constatarea ONLINE.
+
+Contact: {client.phone_number}"""
 
         email = EmailMessage(
             subject=subject,
