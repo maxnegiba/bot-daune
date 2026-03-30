@@ -612,7 +612,7 @@ def check_email_replies_task():
 
         # Căutăm mesaje necitite care conțin "Dosar" în subiect
         # Optimizare: nu procesăm spam-ul sau alte emailuri
-        status, messages = mail.search(None, '(UNSEEN SUBJECT "Dosar")')
+        status, messages = mail.search(None, "(UNSEEN)")
         if status != "OK":
             return
 
@@ -631,128 +631,187 @@ def check_email_replies_task():
                         sender = msg.get("From")
                         print(f"📧 Mesaj nou: {subject} de la {sender}")
 
-                        # 1. Căutăm ID Dosar
-                        # Pattern: "Dosar ([a-f0-9]{8})"
-                        match = re.search(r"Dosar ([a-f0-9]{8})", subject)
-                        if match:
-                            case_id_prefix = match.group(1)
-                            # Căutăm dosarul (startsWith)
-                            case = Case.objects.filter(
-                                id__startswith=case_id_prefix
-                            ).first()
+                        # 0. Parsăm body și extragem atașamente
+                        body = ""
+                        downloaded_attachments_data = [] # To be created as CaseDocument later when we have a case
 
-                            if case:
-                                # Salvăm Message-ID pentru Reply
-                                msg_id = msg.get("Message-ID")
-                                if msg_id:
-                                    case.last_email_message_id = msg_id
-                                    case.save()
+                        if msg.is_multipart():
+                            for part in msg.walk():
+                                content_type = part.get_content_type()
+                                content_disposition = str(part.get("Content-Disposition"))
 
-                                # Parsăm body și extragem atașamente
-                                body = ""
-                                downloaded_attachments = []
-
-                                if msg.is_multipart():
-                                    for part in msg.walk():
-                                        content_type = part.get_content_type()
-                                        content_disposition = str(part.get("Content-Disposition"))
-
-                                        # Extragere Text
-                                        if content_type == "text/plain" and "attachment" not in content_disposition:
-                                            payload = part.get_payload(decode=True)
-                                            if payload:
-                                                body = payload.decode(errors="ignore")
-
-                                        # Extragere Atașamente
-                                        elif "attachment" in content_disposition or part.get_filename():
-                                            filename = part.get_filename()
-                                            if filename:
-                                                payload = part.get_payload(decode=True)
-                                                if payload:
-                                                    from django.core.files.base import ContentFile
-
-                                                    # Salvăm în model
-                                                    doc = CaseDocument.objects.create(
-                                                        case=case,
-                                                        doc_type=CaseDocument.DocType.UNKNOWN,
-                                                        ocr_data={}
-                                                    )
-
-                                                    # Nume fișier unic
-                                                    clean_name = f"email_{case.id}_{filename}".replace(" ", "_")
-                                                    doc.file.save(clean_name, ContentFile(payload))
-
-                                                    downloaded_attachments.append(doc)
-
-                                                    # Declanșăm OCR
-                                                    analyze_document_task.delay(doc.id)
-                                else:
-                                    payload = msg.get_payload(decode=True)
+                                # Extragere Text
+                                if content_type == "text/plain" and "attachment" not in content_disposition:
+                                    payload = part.get_payload(decode=True)
                                     if payload:
                                         body = payload.decode(errors="ignore")
 
-                                # 2. Analizăm conținutul
-                                body_lower = body.lower()
-                                keywords_offer = [
-                                    "oferta",
-                                    "propunere",
-                                    "despagubire",
-                                    "suma de",
-                                    "acceptul",
-                                ]
-                                is_offer = any(k in body_lower for k in keywords_offer)
+                                # Extragere Atașamente temporară în memorie (sau extragem doar payload-ul)
+                                elif "attachment" in content_disposition or part.get_filename():
+                                    filename = part.get_filename()
+                                    if filename:
+                                        payload = part.get_payload(decode=True)
+                                        if payload:
+                                            downloaded_attachments_data.append({
+                                                "filename": filename,
+                                                "payload": payload
+                                            })
+                        else:
+                            payload = msg.get_payload(decode=True)
+                            if payload:
+                                body = payload.decode(errors="ignore")
 
-                                client = get_client(case)
-                                recipient = case
+                        # 1. Căutăm Dosarul robust (prioritate: ID -> NrDosar -> CNP -> NrInmatriculare -> NumePăgubit)
+                        case = None
 
-                                if is_offer:
-                                    print(f"💰 OFERTA DETECTATA pentru {case.id}")
-                                    case.stage = Case.Stage.OFFER_DECISION
+                        full_text = f"{subject} {body}"
+                        full_text_lower = full_text.lower()
 
-                                    # Încercăm să extragem suma (simplistic)
-                                    # Ex: "suma de 1200 RON"
-                                    amount_match = re.search(
-                                        r"(\d+([.,]\d+)?)\s*(ron|lei)", body_lower
-                                    )
-                                    if amount_match:
-                                        val = amount_match.group(1).replace(",", ".")
-                                        try:
-                                            case.settlement_offer_value = float(val)
-                                        except:
-                                            pass
+                        # A) ID Dosar din subiect (Pattern: "Dosar [a-f0-9]{8}")
+                        match = re.search(r"Dosar ([a-f0-9]{8})", subject, re.IGNORECASE)
+                        if match:
+                            case_id_prefix = match.group(1).lower()
+                            case = Case.objects.filter(id__startswith=case_id_prefix).order_by('-created_at').first()
 
-                                    case.save()
+                        # B) Număr Dosar Asigurator (dacă există)
+                        if not case:
+                            # Use iterator and only fetch necessary fields to prevent OOM
+                            cases_with_insurer_id = Case.objects.exclude(insurer_claim_number__isnull=True).exclude(insurer_claim_number__exact='').only('id', 'insurer_claim_number').order_by('-created_at').iterator()
+                            for c in cases_with_insurer_id:
+                                if c.insurer_claim_number.lower() in full_text_lower:
+                                    case = Case.objects.get(id=c.id) # get full object
+                                    break
 
-                                    client.send_buttons(
-                                        recipient,
-                                        f"📢 Am primit o OFERTĂ de la asigurator!\n\nDin textul emailului: {body[:300]}...\n\nCe dorești să faci?",
-                                        [
-                                            "Accept Oferta",
-                                            "Schimb Optiunea",
-                                        ],  # Max 3 buttons usually.
-                                    )
-                                else:
-                                    # Forwardăm mesajul către client (Relay)
-                                    print(
-                                        f"ℹ️ Mesaj info pentru {case.id} -> Forward WhatsApp"
-                                    )
-                                    # Generare Link-uri pt atașamente dacă e cazul
-                                    attachments_info = ""
-                                    if downloaded_attachments:
-                                        attachments_info = "\n\n📄 **Documente atașate:**\n"
-                                        domain = settings.APP_DOMAIN.rstrip("/")
-                                        media_url_path = settings.MEDIA_URL.strip("/")
-                                        for d in downloaded_attachments:
-                                            url = f"{domain}/{media_url_path}/{d.file.name}"
-                                            attachments_info += f"- {url}\n"
+                        # C) CNP Păgubit
+                        if not case:
+                            cnp_match = re.search(r"\b([1-9][0-9]{12})\b", full_text)
+                            if cnp_match:
+                                extracted_cnp = cnp_match.group(1)
+                                case = Case.objects.filter(client__cnp=extracted_cnp).order_by('-created_at').first()
 
-                                    msg_forward = (
-                                        f"📩 Mesaj nou de la asigurator:\n\n{body[:800]}...\n"
-                                        f"{attachments_info}\n"
-                                        "👉 Răspunde aici (text sau poze) și voi trimite răspunsul tău direct la asigurator."
-                                    )
-                                    client.send_text(recipient, msg_forward)
+                        # D) Număr Înmatriculare Păgubit
+                        if not case:
+                            # Normalize text for plates (remove spaces/dashes)
+                            normalized_text = re.sub(r'[\s\-]', '', full_text_lower)
+                            # Get distinct valid plates for victim vehicles
+                            victim_plates = InvolvedVehicle.objects.filter(role=InvolvedVehicle.Role.VICTIM).exclude(license_plate__isnull=True).exclude(license_plate__exact='').values_list('license_plate', flat=True).distinct()
 
+                            for plate in victim_plates:
+                                normalized_plate = re.sub(r'[\s\-]', '', plate.lower())
+                                if normalized_plate and normalized_plate in normalized_text:
+                                    # Found plate, find the newest case for it
+                                    case = Case.objects.filter(vehicles__role=InvolvedVehicle.Role.VICTIM, vehicles__license_plate=plate).order_by('-created_at').first()
+                                    if case:
+                                        break
+
+                        # E) Nume și Prenume Păgubit
+                        if not case:
+                            # Use iterator and only necessary fields
+                            clients = Client.objects.exclude(first_name__isnull=True).exclude(last_name__isnull=True).exclude(first_name__exact='').exclude(last_name__exact='').only('id', 'first_name', 'last_name').order_by('-created_at').iterator()
+                            for c in clients:
+                                fn = c.first_name.strip().lower()
+                                ln = c.last_name.strip().lower()
+
+                                # Use word boundaries to prevent false positives (e.g. 'Ion' matching 'Action')
+                                # Escape the names in case they have special regex characters
+                                fn_escaped = re.escape(fn)
+                                ln_escaped = re.escape(ln)
+
+                                # Check if both parts are in the text as distinct words
+                                if fn and ln:
+                                    fn_match = re.search(r'\b' + fn_escaped + r'\b', full_text_lower)
+                                    ln_match = re.search(r'\b' + ln_escaped + r'\b', full_text_lower)
+
+                                    if fn_match and ln_match:
+                                        case = Case.objects.filter(client_id=c.id).order_by('-created_at').first()
+                                        if case:
+                                            break
+
+                        if case:
+                            # Salvăm Message-ID pentru Reply
+                            msg_id = msg.get("Message-ID")
+                            if msg_id:
+                                case.last_email_message_id = msg_id
+                                case.save()
+
+                            downloaded_attachments = []
+                            from django.core.files.base import ContentFile
+
+                            for att_data in downloaded_attachments_data:
+                                doc = CaseDocument.objects.create(
+                                    case=case,
+                                    doc_type=CaseDocument.DocType.UNKNOWN,
+                                    ocr_data={}
+                                )
+                                clean_name = f"email_{case.id}_{att_data['filename']}".replace(" ", "_")
+                                doc.file.save(clean_name, ContentFile(att_data["payload"]))
+                                downloaded_attachments.append(doc)
+                                analyze_document_task.delay(doc.id)
+
+                            # 2. Analizăm conținutul
+                            body_lower = body.lower()
+                            keywords_offer = [
+                                "oferta",
+                                "propunere",
+                                "despagubire",
+                                "suma de",
+                                "acceptul",
+                            ]
+                            is_offer = any(k in body_lower for k in keywords_offer)
+
+                            client = get_client(case)
+                            recipient = case
+
+                            if is_offer:
+                                print(f"💰 OFERTA DETECTATA pentru {case.id}")
+                                case.stage = Case.Stage.OFFER_DECISION
+
+                                # Încercăm să extragem suma (simplistic)
+                                # Ex: "suma de 1200 RON"
+                                amount_match = re.search(
+                                    r"(\d+([.,]\d+)?)\s*(ron|lei)", body_lower
+                                )
+                                if amount_match:
+                                    val = amount_match.group(1).replace(",", ".")
+                                    try:
+                                        case.settlement_offer_value = float(val)
+                                    except:
+                                        pass
+
+                                case.save()
+
+                                client.send_buttons(
+                                    recipient,
+                                    f"📢 Am primit o OFERTĂ de la asigurator!\n\nDin textul emailului: {body[:300]}...\n\nCe dorești să faci?",
+                                    [
+                                        "Accept Oferta",
+                                        "Schimb Optiunea",
+                                    ],  # Max 3 buttons usually.
+                                )
+                            else:
+                                # Forwardăm mesajul către client (Relay)
+                                print(
+                                    f"ℹ️ Mesaj info pentru {case.id} -> Forward WhatsApp"
+                                )
+                                # Generare Link-uri pt atașamente dacă e cazul
+                                attachments_info = ""
+                                if downloaded_attachments:
+                                    attachments_info = "\n\n📄 **Documente atașate:**\n"
+                                    domain = settings.APP_DOMAIN.rstrip("/")
+                                    media_url_path = settings.MEDIA_URL.strip("/")
+                                    for d in downloaded_attachments:
+                                        url = f"{domain}/{media_url_path}/{d.file.name}"
+                                        attachments_info += f"- {url}\n"
+
+                                msg_forward = (
+                                    f"📩 Mesaj nou de la asigurator:\n\n{body[:800]}...\n"
+                                    f"{attachments_info}\n"
+                                    "👉 Răspunde aici (text sau poze) și voi trimite răspunsul tău direct la asigurator."
+                                )
+                                client.send_text(recipient, msg_forward)
+
+                        else:
+                            print(f"⚠️ Nu am putut asocia emailul '{subject}' niciunui dosar existent. Ignorat.")
             except Exception as e_inner:
                 print(f"Eroare procesare email {num}: {e_inner}")
 
