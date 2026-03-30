@@ -25,6 +25,15 @@ class SendClaimEmailTaskTestCase(TestCase):
             file="uploads/photo.jpg"
         )
 
+        # Create victim vehicle to satisfy the new email validation logic
+        from apps.claims.models import InvolvedVehicle
+        self.victim_vehicle = InvolvedVehicle.objects.create(
+            case=self.case,
+            role=InvolvedVehicle.Role.VICTIM,
+            make="Dacia",
+            license_plate="B123ABC"
+        )
+
     @patch("apps.claims.tasks.EmailMessage")
     @patch("apps.claims.tasks.shutil.copy")
     @patch("apps.claims.tasks.os.path.exists")
@@ -102,4 +111,24 @@ class SendClaimEmailTaskTestCase(TestCase):
         send_claim_email_task(self.case.id)
 
         # Should still try to send email even if one attachment failed
+        mock_email_instance.send.assert_called_once()
+
+    @patch("apps.claims.tasks.EmailMessage")
+    def test_send_claim_email_aborts_if_missing_victim_vehicle_details(self, mock_email_class):
+        # Create a new case without victim vehicle
+        new_case = Case.objects.create(client=self.client)
+
+        # Setup mock
+        mock_email_instance = MagicMock()
+        mock_email_class.return_value = mock_email_instance
+
+        send_claim_email_task(new_case.id)
+
+        # Should send an alert to the admin because victim details are missing
+        mock_email_class.assert_called_once()
+        call_kwargs = mock_email_class.call_args[1]
+        self.assertEqual(call_kwargs['to'], ["office@autodaune.ro"])
+        self.assertIn("⚠️ Intervenție Umană Necesară", call_kwargs['subject'])
+
+        # The alert should be sent
         mock_email_instance.send.assert_called_once()
