@@ -53,8 +53,8 @@ class PhotoLogicTestCase(TestCase):
         msg = args[1]
         self.assertIn("ai trimis 3", msg)
 
-    @patch("apps.bot.utils.WhatsAppClient.send_buttons")
-    def test_check_status_success_with_photos(self, mock_buttons):
+    @patch("apps.bot.utils.WhatsAppClient.send_text")
+    def test_check_status_success_with_photos(self, mock_text):
         """Test that 4 photos satisfy the requirement."""
         # Add 4 Photos
         for i in range(4):
@@ -62,20 +62,21 @@ class PhotoLogicTestCase(TestCase):
 
         check_status_and_notify(self.case)
 
-        # Should call send_buttons (Greeting success) or text (Mandate) depending on resolution
-        # Here resolution is UNDECIDED so it asks for resolution
-        self.assertTrue(mock_buttons.called)
-        args, _ = mock_buttons.call_args
+        # In current logic, since guilty_vehicle is not selected, it transitions to SELECTING_GUILTY_INSURER
+        # and calls send_text
+        self.assertTrue(mock_text.called)
+        args, _ = mock_text.call_args
         self.assertIn("toate documentele necesare", args[1])
 
-    @patch("apps.bot.utils.WhatsAppClient.send_buttons")
-    def test_check_status_success_with_video(self, mock_buttons):
+    @patch("apps.bot.utils.WhatsAppClient.send_text")
+    def test_check_status_success_with_video(self, mock_text):
         """Test that video satisfies the requirement even with 0 photos."""
         self.case.has_scene_video = True
         self.case.save()
 
         check_status_and_notify(self.case)
 
-        self.assertTrue(mock_buttons.called)
-        args, _ = mock_buttons.call_args
+        # Same as above
+        self.assertTrue(mock_text.called)
+        args, _ = mock_text.call_args
         self.assertIn("toate documentele necesare", args[1])

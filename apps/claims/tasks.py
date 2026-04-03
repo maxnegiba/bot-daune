@@ -580,6 +580,11 @@ Contact: {client.phone_number}"""
         # Confirmăm pe consolă
         print(f"🚀 Email trimis cu succes la {target_email}")
 
+        # Tracking timpul primului mail catre asigurator
+        from django.utils import timezone
+        case.last_message_to_insurer_at = timezone.now()
+        case.save()
+
         # Notă: Nu schimbăm 'stage' aici, rămâne PROCESSING_INSURER până răspund ei.
 
     except Exception as e:
@@ -748,67 +753,39 @@ def check_email_replies_task():
                                 downloaded_attachments.append(doc)
                                 analyze_document_task.delay(doc.id)
 
-                            # 2. Analizăm conținutul
-                            body_lower = body.lower()
-                            keywords_offer = [
-                                "oferta",
-                                "propunere",
-                                "despagubire",
-                                "suma de",
-                                "acceptul",
-                            ]
-                            is_offer = any(k in body_lower for k in keywords_offer)
+                            from django.utils import timezone
+                            case.last_message_from_insurer_at = timezone.now()
+                            case.save()
 
                             client = get_client(case)
                             recipient = case
 
-                            if is_offer:
-                                print(f"💰 OFERTA DETECTATA pentru {case.id}")
-                                case.stage = Case.Stage.OFFER_DECISION
+                            print(f"ℹ️ Mesaj de la asigurator pentru {case.id} -> Forward WhatsApp")
 
-                                # Încercăm să extragem suma (simplistic)
-                                # Ex: "suma de 1200 RON"
-                                amount_match = re.search(
-                                    r"(\d+([.,]\d+)?)\s*(ron|lei)", body_lower
-                                )
-                                if amount_match:
-                                    val = amount_match.group(1).replace(",", ".")
-                                    try:
-                                        case.settlement_offer_value = float(val)
-                                    except:
-                                        pass
+                            # Generare Link-uri pt atașamente dacă e cazul
+                            attachments_info = ""
+                            if downloaded_attachments:
+                                attachments_info = "\n\n📄 **Documente atașate:**\n"
+                                domain = settings.APP_DOMAIN.rstrip("/")
+                                media_url_path = settings.MEDIA_URL.strip("/")
+                                for d in downloaded_attachments:
+                                    url = f"{domain}/{media_url_path}/{d.file.name}"
+                                    attachments_info += f"- {url}\n"
 
-                                case.save()
+                            # Trimitem ca o poștă
+                            msg_forward = (
+                                f"Asigurătorul vă transmite următoarele informații:\n\n"
+                                f"{body[:1000]}...\n"
+                                f"{attachments_info}\n"
+                                "Ce doriți să îi răspundeți? (Scrieți un mesaj sau încărcați documente, iar noi le vom trimite mai departe).\n\n"
+                                "Dacă sunteți de acord cu oferta/răspunsul și doriți să finalizăm cazul, apăsați pe butoanele de mai jos."
+                            )
 
-                                client.send_buttons(
-                                    recipient,
-                                    f"📢 Am primit o OFERTĂ de la asigurator!\n\nDin textul emailului: {body[:300]}...\n\nCe dorești să faci?",
-                                    [
-                                        "Accept Oferta",
-                                        "Schimb Optiunea",
-                                    ],  # Max 3 buttons usually.
-                                )
-                            else:
-                                # Forwardăm mesajul către client (Relay)
-                                print(
-                                    f"ℹ️ Mesaj info pentru {case.id} -> Forward WhatsApp"
-                                )
-                                # Generare Link-uri pt atașamente dacă e cazul
-                                attachments_info = ""
-                                if downloaded_attachments:
-                                    attachments_info = "\n\n📄 **Documente atașate:**\n"
-                                    domain = settings.APP_DOMAIN.rstrip("/")
-                                    media_url_path = settings.MEDIA_URL.strip("/")
-                                    for d in downloaded_attachments:
-                                        url = f"{domain}/{media_url_path}/{d.file.name}"
-                                        attachments_info += f"- {url}\n"
-
-                                msg_forward = (
-                                    f"📩 Mesaj nou de la asigurator:\n\n{body[:800]}...\n"
-                                    f"{attachments_info}\n"
-                                    "👉 Răspunde aici (text sau poze) și voi trimite răspunsul tău direct la asigurator."
-                                )
-                                client.send_text(recipient, msg_forward)
+                            client.send_buttons(
+                                recipient,
+                                msg_forward,
+                                ["Accept Oferta", "Service RAR", "Dauna Totala"]
+                            )
 
                         else:
                             print(f"⚠️ Nu am putut asocia emailul '{subject}' niciunui dosar existent. Ignorat.")
@@ -926,22 +903,80 @@ def send_option_change_email_task(case_id, new_option_label):
 
 # --- TASK 6: Relay WhatsApp -> Email ---
 @shared_task
-def relay_message_to_insurer_task(case_id, message_text, media_urls=None):
+def trigger_delayed_relay_task(case_id):
+    """
+    Called when a user sends a message in PROCESSING_INSURER stage.
+    Instead of sending immediately, we wait 30 minutes, gather all user messages from the last 30 minutes,
+    and send them as a single email.
+    """
+    from .models import CommunicationLog
+    from django.utils import timezone
+    import datetime
+
     try:
         case = Case.objects.get(id=case_id)
         if not case.insurer_email:
             return
 
-        print(f"📧 [RELAY] Trimit reply la asigurator pentru dosar {case.id}")
+        # If the case is no longer in the processing phase, abort the relay
+        if case.stage != Case.Stage.PROCESSING_INSURER:
+            return
+
+        # Check if 30 minutes have passed since the LAST message the user sent
+        # We can just check the newest incoming message in the last 30 minutes.
+        threshold = timezone.now() - datetime.timedelta(minutes=30)
+
+        # If there is a message newer than threshold, it means the user is still active.
+        # We should wait. We'll reschedule this task.
+        # Actually, if we just delay the task by 30 mins when called,
+        # when it runs, we check if any message was sent in the last 30 mins.
+        # If yes, we wait again.
+
+        last_in_msg = case.logs.filter(direction="IN").order_by('-created_at').first()
+        if last_in_msg:
+            time_since_last_msg = timezone.now() - last_in_msg.created_at
+            if time_since_last_msg < datetime.timedelta(minutes=29):
+                # User sent something recently. Let's reschedule for 30 mins after that last message.
+                remaining_wait = datetime.timedelta(minutes=30) - time_since_last_msg
+                trigger_delayed_relay_task.apply_async(args=[case.id], countdown=remaining_wait.total_seconds())
+                return
+
+        # If we reached here, no new message in the last 30 mins.
+        # Let's gather all messages sent by the user since the last time we emailed the insurer.
+        # Or simply, all IN logs since last_message_to_insurer_at
+
+        last_to_insurer = case.last_message_to_insurer_at
+
+        logs_to_send = case.logs.filter(
+            direction="IN",
+            created_at__gt=last_to_insurer if last_to_insurer else case.created_at
+        ).order_by('created_at')
+
+        if not logs_to_send.exists():
+            return
+
+        print(f"📧 [RELAY] Trimit reply la asigurator pentru dosar {case.id} (Grupat)")
+
+        # Colectam textul
+        text_messages = []
+        for log in logs_to_send:
+            if log.content and log.content.strip() and not log.content.startswith("{"): # ignore purely JSON logs or empty
+                # Avoid adding button clicks like "Accept Oferta" if they somehow got here
+                if log.content.lower() not in ["accept oferta", "service rar", "dauna totala"]:
+                    text_messages.append(log.content)
+
+        combined_text = "\n\n".join(text_messages)
+        if not combined_text:
+            combined_text = "(Clientul a trimis doar atașamente)"
 
         subject = f"Re: Avizare Dauna Auto - {case.client.full_name} - Dosar {str(case.id)[:8]}"
 
         body = f"""
         Buna ziua,
 
-        Clientul a transmis urmatorul raspuns/documente:
+        Clientul nostru doreste sa va transmita urmatoarele informatii:
 
-        "{message_text}"
+        {combined_text}
 
         Cu stima,
         Echipa Auto Daune
@@ -961,46 +996,61 @@ def relay_message_to_insurer_task(case_id, message_text, media_urls=None):
             cc=["office@autodaune.ro"],
         )
 
-        # Download and attach media if any
+        # Colectăm și atașamentele (CaseDocument adăugate după ultimul mail)
+        docs_to_send = CaseDocument.objects.filter(
+            case=case,
+            uploaded_at__gt=last_to_insurer if last_to_insurer else case.created_at
+        )
+
         temp_files_to_cleanup = []
-        if media_urls:
-            for url, mime_type in media_urls:
-                try:
-                    r = requests.get(url, timeout=15, stream=True)
-                    if r.status_code == 200:
-                        fname = url.split("/")[-1]
-                        # Extensii
-                        if "image" in mime_type:
-                            if not fname.endswith((".jpg", ".png", ".jpeg")):
-                                fname += ".jpg"
-                        elif "pdf" in mime_type:
-                            if not fname.endswith(".pdf"):
-                                fname += ".pdf"
+        count = 0
 
-                        # Salvăm în temp file
-                        tmp_fd, tmp_path = tempfile.mkstemp(suffix=f"_{fname}")
-                        os.close(tmp_fd)
-
-                        with open(tmp_path, "wb") as f:
-                            for chunk in r.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
-
-                        email.attach_file(tmp_path, mime_type)
-                        temp_files_to_cleanup.append(tmp_path)
-
-                except Exception as e:
-                    print(f"⚠️ Eroare download relay {url}: {e}")
+        task_tmp_dir = tempfile.mkdtemp()
 
         try:
+            for doc in docs_to_send:
+                if doc.file:
+                    try:
+                        fname = doc.file.name.lower()
+                        if fname.endswith(".pdf"):
+                            content_type = "application/pdf"
+                        elif fname.endswith(".png"):
+                            content_type = "image/png"
+                        elif fname.endswith(".jpg") or fname.endswith(".jpeg"):
+                            content_type = "image/jpeg"
+                        elif fname.endswith(".mp4"):
+                            content_type = "video/mp4"
+                        else:
+                            content_type = "application/octet-stream"
+
+                        doc_label = doc.get_doc_type_display().replace("/", "_").replace(" ", "_")
+                        clean_name = f"{doc_label}_{count}.{fname.split('.')[-1]}"
+                        tmp_path = os.path.join(task_tmp_dir, clean_name)
+
+                        shutil.copy(doc.file.path, tmp_path)
+                        email.attach_file(tmp_path, content_type)
+                        count += 1
+                    except Exception as e:
+                        print(f"⚠️ Eroare atașare relay {doc.file.name}: {e}")
+
             email.send()
+
+            # Update timestamp
+            case.last_message_to_insurer_at = timezone.now()
+            case.save()
+
+            # Notificam clientul ca s-a trimis
+            client = get_client(case)
+            client.send_text(case, "✅ Răspunsul tău a fost grupat și transmis către asigurător.")
+
+            # Curățăm flagul de relay delay
+            from django.core.cache import cache
+            cache.delete(f"relay_notified_{case.id}")
+
         finally:
-            for p in temp_files_to_cleanup:
-                try:
-                    if os.path.exists(p):
-                        os.remove(p)
-                except:
-                    pass
+            if os.path.exists(task_tmp_dir):
+                shutil.rmtree(task_tmp_dir)
+
         print(f"✅ Email relay trimis!")
 
     except Exception as e:
@@ -1049,3 +1099,104 @@ def send_admin_new_case_email_task(case_id):
 
     except Exception as e:
         print(f"❌ Eroare la trimiterea emailului de notificare dosar nou: {e}")
+
+@shared_task
+def send_24h_reminders_task():
+    """
+    Task care rulează zilnic pentru a trimite remindere.
+    Verifică dosarele în stadiul PROCESSING_INSURER.
+    Dacă ultimul mesaj este către asigurător și au trecut 24h, trimitem reminder asigurătorului.
+    Dacă ultimul mesaj este de la asigurător și au trecut 24h, trimitem reminder clientului.
+    """
+    from .models import Case
+    from django.utils import timezone
+    import datetime
+
+    # Doar în zilele lucrătoare? (Opțional - implementăm o verificare simplă de weekend)
+    # today_weekday = timezone.now().weekday()
+    # if today_weekday >= 5: # 5=Sâmbătă, 6=Duminică
+    #     return
+
+    threshold = timezone.now() - datetime.timedelta(hours=24)
+    cases = Case.objects.filter(stage=Case.Stage.PROCESSING_INSURER)
+
+    for case in cases:
+        # Aflăm cine așteaptă după cine.
+        # Comparăm last_message_to_insurer_at cu last_message_from_insurer_at
+
+        last_to = case.last_message_to_insurer_at
+        last_from = case.last_message_from_insurer_at
+
+        # Dacă nu avem deloc to_insurer, înseamnă că nu s-a trimis primul mail
+        if not last_to:
+            continue
+
+        waiting_on_insurer = False
+        waiting_on_client = False
+
+        if not last_from:
+            # Am trimis primul mail și nu am primit răspuns
+            waiting_on_insurer = True
+            time_since = timezone.now() - last_to
+        else:
+            if last_to > last_from:
+                waiting_on_insurer = True
+                time_since = timezone.now() - last_to
+            else:
+                waiting_on_client = True
+                time_since = timezone.now() - last_from
+
+        # Trimitem reminder doar o dată (verificăm dacă am trimis deja ceva în ultimele 24h)
+        from django.core.cache import cache
+        cache_key = f"reminder_24h_sent_{case.id}"
+
+        if time_since >= datetime.timedelta(hours=24) and not cache.get(cache_key):
+            if waiting_on_insurer and case.insurer_email:
+                # Trimitem mail asiguratorului
+                try:
+                    subject = f"Reminder: Avizare Dauna Auto - {case.client.full_name} - Dosar {str(case.id)[:8]}"
+                    body = f"""
+                    Buna ziua,
+
+                    Revenim la emailul anterior. Asteptam un raspuns din partea dumneavoastra privind dosarul clientului nostru.
+
+                    Cu stima,
+                    Echipa Auto Daune
+                    """
+
+                    headers = {}
+                    if case.last_email_message_id:
+                        headers["In-Reply-To"] = case.last_email_message_id
+                        headers["References"] = case.last_email_message_id
+
+                    email = EmailMessage(
+                        subject=subject,
+                        body=body,
+                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        to=[case.insurer_email],
+                        headers=headers,
+                        cc=["office@autodaune.ro"],
+                    )
+                    email.send()
+                    cache.set(cache_key, True, timeout=86400) # set cache to not resend for next 24h
+                    print(f"✅ Reminder 24h trimis asigurătorului pentru dosar {case.id}")
+                except Exception as e:
+                    print(f"⚠️ Eroare reminder asigurător: {e}")
+
+            elif waiting_on_client:
+                # Trimitem mesaj pe chat clientului
+                try:
+                    client = get_client(case)
+                    msg = (
+                        "Salut, asigurătorul așteaptă un răspuns de la tine de mai bine de 24 de ore.\n\n"
+                        "Te rugăm să ne scrii mesajul tău pentru a-l transmite mai departe, sau alege una din opțiunile de mai jos dacă dorești să finalizăm dosarul."
+                    )
+                    client.send_buttons(
+                        case,
+                        msg,
+                        ["Accept Oferta", "Service RAR", "Dauna Totala"]
+                    )
+                    cache.set(cache_key, True, timeout=86400) # set cache to not resend for next 24h
+                    print(f"✅ Reminder 24h trimis clientului pentru dosar {case.id}")
+                except Exception as e:
+                    print(f"⚠️ Eroare reminder client: {e}")
