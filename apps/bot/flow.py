@@ -63,14 +63,11 @@ class FlowManager:
 
         # --- ALTE ETAPE ---
         elif stage == Case.Stage.PROCESSING_INSURER:
-            # Relay: Orice trimite userul, trimitem la asigurator
-            from apps.claims.tasks import relay_message_to_insurer_task
+            # Aici ambele parti (si clientul, si asiguratorul) pot discuta
+            # Verificam daca clientul a trimis ceva, caz in care programam relay-ul la 30 min (daca nu e deja)
+            # Sau il adaugam in sistem si task-ul va prelua cand vine vremea
+            self._handle_insurer_negotiation(content, media_urls)
 
-            relay_message_to_insurer_task.delay(self.case.id, content, media_urls)
-            self.client.send_text(
-                self.case,
-                "✅ Am transmis mesajul/documentele către asigurator."
-            )
         elif stage == Case.Stage.OFFER_DECISION:
              self._handle_offer_decision(content)
 
@@ -380,6 +377,38 @@ class FlowManager:
              # Lipsesc acte. Informăm utilizatorul.
              msg = "👍 Am primit. Mai am nevoie de:\n- " + "\n- ".join(missing)
              self.client.send_text(self.case, msg)
+
+    def _handle_insurer_negotiation(self, text, media_urls):
+        # We need to save the user's message somehow so it gets picked up in 30 mins
+        # FlowManager already creates a CommunicationLog in the webhook view!
+        # But for media, if we delay, we might need a way to track the media.
+        # Actually, let's just trigger the relay task with a 30-minute delay.
+        # The task itself can just pull all IN logs and unsent documents from the last 30 minutes.
+        from apps.claims.tasks import trigger_delayed_relay_task
+
+        # Dacă userul apasă un buton de decizie în faza asta
+        text_lower = text.lower()
+        if "accept" in text_lower or "schimb" in text_lower or "totala" in text_lower or "service" in text_lower or "rar" in text_lower:
+             # Folosim logica de decizie
+             self._handle_offer_decision(text)
+             return
+
+        # Altfel, tratam ca mesaj ce trebuie trimis la asigurator
+        if media_urls:
+            # We must process the media locally immediately so we have the files saved
+            self._handle_image_upload(media_urls, silent=True)
+
+        trigger_delayed_relay_task.delay(self.case.id)
+
+        # Cache or state to not spam the user
+        from django.core.cache import cache
+        cache_key = f"relay_notified_{self.case.id}"
+        if not cache.get(cache_key):
+             self.client.send_text(
+                  self.case,
+                  "✅ Am primit mesajul/documentele. Acestea vor fi grupate și trimise automat către asigurător în aproximativ 30 de minute, pentru a-ți oferi timp să adaugi și alte informații dacă dorești."
+             )
+             cache.set(cache_key, True, timeout=1800)
 
     def _handle_offer_decision(self, text):
         text = text.lower()

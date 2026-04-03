@@ -119,6 +119,10 @@ class Case(models.Model):
     # Email Threading
     last_email_message_id = models.CharField(max_length=255, blank=True, null=True, help_text="Message-ID pentru threading email")
 
+    # Tracking timp mesaje pt remindere
+    last_message_from_insurer_at = models.DateTimeField(null=True, blank=True)
+    last_message_to_insurer_at = models.DateTimeField(null=True, blank=True)
+
     # Date Eveniment
     accident_date = models.DateField(blank=True, null=True, verbose_name="Data Eveniment")
 
