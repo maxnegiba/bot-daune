@@ -4,141 +4,139 @@
 {% block title %}Chat Centralizat{% endblock %}
 
 {% block content %}
-<div class="flex h-[calc(100vh-100px)] w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden shadow-sm font-sans">
+<div class="flex h-[calc(100vh-100px)] w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow-sm font-sans">
 
     <!-- Sidebar: Conversation List -->
-    <div class="w-1/3 md:w-1/4 min-w-[320px] border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col z-10">
-        <div class="p-5 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50 backdrop-blur-sm sticky top-0 z-20">
-            <h2 class="text-sm font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wide flex items-center gap-2">
-                <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+    <div class="w-1/3 md:w-1/4 min-w-[320px] border-r border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900 flex flex-col z-10">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 sticky top-0 z-20 flex justify-between items-center">
+            <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider flex items-center gap-2">
+                <i class="fas fa-inbox text-blue-500"></i>
                 Inbox Clienți
             </h2>
+            <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Sistem activ"></div>
         </div>
 
-        <div id="conversation-list" class="flex-1 overflow-y-auto custom-scrollbar">
+        <div id="conversation-list" class="flex-1 overflow-y-auto custom-scrollbar bg-transparent">
             <!-- Items injected by JS -->
             <div class="flex flex-col items-center justify-center h-40 text-gray-400 animate-pulse space-y-3">
-                <div class="w-8 h-8 bg-gray-200 rounded-full"></div>
+                <div class="w-8 h-8 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
                 <span class="text-xs font-medium">Se încarcă lista...</span>
             </div>
         </div>
     </div>
 
     <!-- Main: Chat Window -->
-    <div class="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 relative">
+    <div class="flex-1 flex flex-col bg-white dark:bg-gray-900 relative">
 
         <!-- Header -->
-        <div id="chat-header" class="h-18 px-6 py-3 flex items-center justify-between bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm hidden z-20 sticky top-0">
+        <div id="chat-header" class="h-16 px-6 flex items-center justify-between bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 shadow-sm hidden z-20 sticky top-0">
             <div class="flex items-center gap-4">
                 <div id="header-avatar-container" class="relative">
-                    <div id="header-avatar" class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-md ring-2 ring-white dark:ring-gray-700">
+                    <div id="header-avatar" class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-sm shadow-md">
                         ?
                     </div>
-                    <span id="header-online-status" class="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-white dark:border-gray-800 rounded-full"></span>
+                    <span id="header-online-status" class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full"></span>
                 </div>
                 <div>
-                    <h3 id="header-client-name" class="font-bold text-gray-900 dark:text-white text-lg leading-tight tracking-tight">
+                    <h3 id="header-client-name" class="font-bold text-gray-800 dark:text-white text-base leading-tight">
                         Selectează un client
                     </h3>
-                    <p id="header-details" class="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                    <p id="header-details" class="text-xs text-gray-500 font-medium mt-0.5">
                         ...
                     </p>
                 </div>
             </div>
 
             <div class="flex items-center gap-3">
-                <span id="header-bot-status" class="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 border border-gray-200 shadow-sm transition-all hover:bg-gray-200 cursor-default">
+                <span id="header-bot-status" class="px-2.5 py-1 text-[10px] uppercase font-bold rounded-md bg-gray-100 text-gray-600 tracking-wider shadow-sm transition-all cursor-default">
                     STATUS
                 </span>
-                <a id="header-case-link" href="#" target="_blank" class="group flex items-center gap-1 text-blue-600 hover:text-blue-700 text-sm font-semibold transition-colors px-3 py-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                <a id="header-case-link" href="#" target="_blank" class="group flex items-center gap-1.5 text-blue-600 hover:text-blue-700 text-xs font-bold uppercase transition-colors px-3 py-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                    <i class="fas fa-folder-open"></i>
                     <span>Vezi Dosar</span>
-                    <svg class="w-4 h-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
                 </a>
             </div>
         </div>
 
         <!-- Messages Area -->
-        <div id="chat-messages" class="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-gray-900/50 scroll-smooth custom-scrollbar relative">
-            <div class="absolute inset-0 opacity-5 pointer-events-none" style="background-image: radial-gradient(#cbd5e1 1px, transparent 1px); background-size: 20px 20px;"></div>
-
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-6 flex flex-col gap-5 bg-gray-50 dark:bg-gray-900 scroll-smooth custom-scrollbar relative">
             <div class="flex flex-col items-center justify-center h-full text-gray-400 space-y-4 relative z-10">
-                <div class="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-2">
-                    <svg class="w-10 h-10 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
-                    </svg>
+                <div class="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-center justify-center mb-2 shadow-inner">
+                    <i class="fas fa-comments text-2xl text-gray-300 dark:text-gray-600"></i>
                 </div>
-                <p class="font-medium text-gray-500">Selectează o conversație din stânga pentru a începe.</p>
+                <p class="font-medium text-gray-500 text-sm">Selectează o conversație pentru a începe.</p>
             </div>
         </div>
 
         <!-- Input Area -->
-        <div id="chat-input-area" class="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 hidden shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20">
-            <form id="chat-form" class="flex gap-3 items-end max-w-5xl mx-auto">
-                <div class="flex-1 relative group">
-                    <textarea id="message-input" rows="1" class="w-full rounded-2xl border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 px-5 py-3.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none shadow-sm text-sm transition-all focus:shadow-md placeholder-gray-400" placeholder="Scrie un mesaj..." autocomplete="off"></textarea>
-                    <!-- Quick Actions (Optional Future feature placeholder) -->
-                    <!-- <button type="button" class="absolute right-3 bottom-3 text-gray-400 hover:text-blue-500 transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg></button> -->
+        <div id="chat-input-area" class="p-4 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 hidden shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.02)] z-20">
+            <form id="chat-form" class="flex flex-col gap-2 max-w-5xl mx-auto">
+                <div class="flex items-end gap-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-1.5 pr-2 transition-colors focus-within:bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-50">
+
+                    <button type="button" class="text-gray-400 hover:text-blue-500 p-3 rounded-xl hover:bg-blue-50 transition-colors shrink-0" title="Atașamente viitoare">
+                        <i class="fas fa-paperclip text-lg"></i>
+                    </button>
+
+                    <textarea id="message-input" rows="1" class="flex-1 bg-transparent border-none py-3 px-2 resize-none text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 max-h-32 custom-scrollbar focus:ring-0" placeholder="Scrie un mesaj clientului..." autocomplete="off"></textarea>
+
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-md transition-transform active:scale-95 mb-1 group">
+                        <i class="fas fa-paper-plane text-sm transform -translate-x-0.5 group-hover:translate-x-0 group-hover:-translate-y-0.5 transition-transform"></i>
+                    </button>
                 </div>
-                <button type="submit" class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white w-12 h-12 rounded-full font-medium transition-all shadow-md hover:shadow-lg hover:scale-105 flex items-center justify-center active:scale-95 group">
-                    <svg id="send-btn-icon" class="w-5 h-5 ml-0.5 transform rotate-90 transition-transform group-hover:rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
-                    </svg>
-                </button>
+
+                <div class="flex justify-between items-center px-2 mt-1">
+                    <span class="text-[10px] text-gray-400 flex items-center gap-1.5 uppercase font-semibold tracking-wider">
+                        <i class="fas fa-info-circle text-blue-400"></i>
+                        Preluare manuală a conversației
+                    </span>
+                    <span id="typing-indicator" class="hidden text-blue-500 text-xs font-semibold flex items-center gap-1.5">
+                        <i class="fas fa-circle-notch fa-spin"></i> Se trimite...
+                    </span>
+                </div>
             </form>
-            <div class="max-w-5xl mx-auto mt-2 flex justify-between items-center px-2">
-                <span class="text-[10px] text-gray-400 flex items-center gap-1">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    Trimiterea unui mesaj va opri automat botul pentru acest dosar.
-                </span>
-                <span id="typing-indicator" class="hidden text-blue-500 text-xs font-semibold animate-pulse flex items-center gap-1">
-                    <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"></span>
-                    <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce delay-75"></span>
-                    <span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce delay-150"></span>
-                    Se trimite...
-                </span>
-            </div>
         </div>
     </div>
 </div>
 
 <style>
+    @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    .font-sans { font-family: 'Inter', sans-serif; }
+
     /* Custom Scrollbar */
-    .custom-scrollbar::-webkit-scrollbar {
-        width: 6px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-        background-color: rgba(156, 163, 175, 0.3);
-        border-radius: 20px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background-color: rgba(156, 163, 175, 0.5);
+    .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+    .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; }
+
+    /* Animations */
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-in-up { animation: fadeInUp 0.3s ease-out forwards; }
+
+    /* Bubbles */
+    .bubble-admin {
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+        color: white;
+        border-bottom-right-radius: 2px;
+        box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
     }
 
-    /* Fallback/Polyfill styles to ensure visibility if Tailwind classes are purged/missing */
-    .admin-bubble-bg {
-        background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
-        color: white;
-    }
-    .client-bubble-bg {
-        background-color: #ffffff;
+    .bubble-client {
+        background: white;
         color: #1f2937;
-        border: 1px solid #f3f4f6;
+        border-bottom-left-radius: 2px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        border: 1px solid #e5e7eb;
     }
-    .dark .client-bubble-bg {
-        background-color: #1f2937;
+    .dark .bubble-client {
+        background: #1f2937;
         color: #f3f4f6;
         border-color: #374151;
     }
 
-    /* Ensure basic utilities work */
-    .text-white { color: #ffffff !important; }
-    .bg-blue-50 { background-color: #eff6ff; }
-    .text-blue-900 { color: #1e3a8a; }
-    .bg-gray-50 { background-color: #f9fafb; }
-    .text-gray-900 { color: #111827; }
+    textarea:focus { outline: none; box-shadow: none; }
 </style>
 
 <script>
@@ -152,22 +150,11 @@
         const msgInput = document.getElementById('message-input');
         const headerAvatar = document.getElementById('header-avatar');
 
-        // Helper: Generate Initials
         function getInitials(name) {
             if (!name) return "?";
             const parts = name.trim().split(/\s+/);
             if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
             return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-        }
-
-        // Helper: Random/Consistent Color for Avatar
-        function stringToColor(str) {
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                hash = str.charCodeAt(i) + ((hash << 5) - hash);
-            }
-            const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
-            return "00000".substring(0, 6 - c.length) + c;
         }
 
         // --- 1. Polling Conversations ---
@@ -189,52 +176,49 @@
             if (list.length === 0) {
                 html = `
                 <div class="flex flex-col items-center justify-center h-40 text-gray-400 space-y-2">
-                    <svg class="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
+                    <i class="fas fa-inbox text-3xl opacity-30"></i>
                     <span class="text-xs font-medium">Nu există conversații.</span>
                 </div>`;
             } else {
                 list.forEach(c => {
                     const isActive = (c.id === currentCaseId);
 
-                    // Styling Logic
                     const bgClass = isActive
-                        ? "bg-blue-50 dark:bg-blue-900/10 border-l-4 border-blue-600 shadow-inner"
-                        : "hover:bg-gray-50 dark:hover:bg-gray-800/50 border-l-4 border-transparent transition-colors duration-200";
+                        ? "bg-white dark:bg-gray-800 border-l-4 border-blue-600 shadow-sm z-10 relative"
+                        : "hover:bg-white/50 dark:hover:bg-gray-800/50 border-l-4 border-transparent transition-colors duration-200";
 
-                    const nameColor = isActive ? "text-blue-900 dark:text-blue-100" : "text-gray-900 dark:text-gray-100";
-                    const unreadDot = c.needs_reply ? `<span class="w-2.5 h-2.5 bg-red-500 rounded-full ml-auto shadow-sm ring-2 ring-white dark:ring-gray-800 animate-pulse" title="Mesaj nou"></span>` : "";
+                    const nameColor = isActive ? "text-blue-900 dark:text-white font-bold" : "text-gray-800 dark:text-gray-200 font-semibold";
+                    const unreadDot = c.needs_reply ? `<span class="w-2 h-2 bg-red-500 rounded-full shadow-sm animate-pulse"></span>` : "";
 
-                    // Avatar Initials
                     const initials = getInitials(c.client_name);
-                    // Generate a consistent pastel background color based on name if desired, or stick to gray
-                    const avatarBg = isActive ? "bg-blue-200 text-blue-800" : "bg-gray-200 text-gray-600";
+                    const avatarBg = isActive ? "bg-gradient-to-tr from-blue-500 to-indigo-500 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300";
 
                     html += `
-                    <div onclick="selectConversation('${c.id}')" class="cursor-pointer p-4 ${bgClass} group">
+                    <div onclick="selectConversation('${c.id}')" class="cursor-pointer p-4 border-b border-gray-100 dark:border-gray-800 ${bgClass} group">
                         <div class="flex items-start gap-3">
-                            <div class="w-10 h-10 rounded-full ${avatarBg} flex-shrink-0 flex items-center justify-center font-bold text-sm shadow-sm">
+                            <div class="w-10 h-10 rounded-full ${avatarBg} flex-shrink-0 flex items-center justify-center text-sm shadow-sm font-bold transition-all">
                                 ${initials}
                             </div>
                             <div class="flex-1 min-w-0">
-                                <div class="flex justify-between items-center mb-0.5">
-                                    <h4 class="font-bold ${nameColor} text-sm truncate pr-2">
+                                <div class="flex justify-between items-center mb-1">
+                                    <h4 class="${nameColor} text-sm truncate pr-2">
                                         ${c.client_name}
                                     </h4>
                                     <span class="text-[10px] text-gray-400 font-medium whitespace-nowrap">${c.last_time}</span>
                                 </div>
-                                <div class="flex items-center justify-between">
-                                    <p class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[140px] group-hover:text-gray-700 dark:group-hover:text-gray-300 transition-colors">
+                                <div class="flex items-center justify-between gap-2">
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 truncate group-hover:text-gray-700 dark:group-hover:text-gray-300 transition-colors">
                                         ${c.last_message || '<span class="italic text-gray-300">Fără mesaje</span>'}
                                     </p>
                                     ${unreadDot}
                                 </div>
                                 <div class="flex items-center gap-2 mt-2">
-                                    <span class="text-[9px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-gray-500 uppercase font-bold tracking-wider border border-gray-200 dark:border-gray-600">
+                                    <span class="text-[9px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-gray-500 uppercase font-bold tracking-wider">
                                         ${c.stage}
                                     </span>
                                     ${c.is_human ?
-                                        '<span class="text-[9px] text-orange-700 font-bold bg-orange-50 px-1.5 py-0.5 rounded border border-orange-200 flex items-center gap-1"><span class="w-1 h-1 bg-orange-500 rounded-full"></span>UMAN</span>' :
-                                        '<span class="text-[9px] text-green-700 font-bold bg-green-50 px-1.5 py-0.5 rounded border border-green-200 flex items-center gap-1"><span class="w-1 h-1 bg-green-500 rounded-full"></span>BOT</span>'
+                                        '<span class="text-[9px] text-orange-700 font-bold bg-orange-50 px-1.5 py-0.5 rounded flex items-center gap-1 border border-orange-100"><i class="fas fa-user text-[8px]"></i> UMAN</span>' :
+                                        '<span class="text-[9px] text-green-700 font-bold bg-green-50 px-1.5 py-0.5 rounded flex items-center gap-1 border border-green-100"><i class="fas fa-robot text-[8px]"></i> BOT</span>'
                                     }
                                 </div>
                             </div>
@@ -243,163 +227,138 @@
                     `;
                 });
             }
-
-            if (container.innerHTML !== html) {
-                container.innerHTML = html;
-            }
+            container.innerHTML = html;
         }
 
         // --- 2. Select Conversation ---
         window.selectConversation = async function(caseId) {
-            if (currentCaseId === caseId) return; // Already selected
-
             currentCaseId = caseId;
             lastMsgId = 0;
+            chatMessages.innerHTML = ''; // clear
 
-            // UI Update
+            // Immediately re-render list to show active state
+            fetchConversations();
+
+            // Setup Header (Initial generic load, will be populated fully by messages API)
             document.getElementById('chat-header').classList.remove('hidden');
             document.getElementById('chat-input-area').classList.remove('hidden');
-            chatMessages.innerHTML = `
-                <div class="absolute inset-0 opacity-5 pointer-events-none" style="background-image: radial-gradient(#cbd5e1 1px, transparent 1px); background-size: 20px 20px;"></div>
-                <div class="flex justify-center items-center h-full relative z-10">
-                    <div class="animate-spin rounded-full h-8 w-8 border-4 border-blue-100 border-t-blue-600 shadow-lg"></div>
-                </div>`;
+            document.getElementById('header-client-name').innerText = "Se încarcă...";
+            headerAvatar.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
-            // Fetch Messages immediately
-            await fetchMessages(true);
-
-            // Start Polling Messages
+            // Stop old polling
             if (msgInterval) clearInterval(msgInterval);
-            msgInterval = setInterval(() => fetchMessages(false), 1000);
 
-            // Focus Input
+            // Fetch initial messages
+            await fetchMessages();
+
+            // Start new polling
+            msgInterval = setInterval(fetchMessages, 2000);
+
+            // Focus input
             msgInput.focus();
         };
 
         // --- 3. Polling Messages ---
-        async function fetchMessages(fullReload = false) {
+        async function fetchMessages() {
             if (!currentCaseId) return;
 
             try {
-                const url = `/bot/admin/api/messages/${currentCaseId}/?after_id=${fullReload ? 0 : lastMsgId}`;
-                const res = await fetch(url);
+                const res = await fetch(`/bot/admin/api/messages/${currentCaseId}/?after_id=${lastMsgId}`);
                 if (!res.ok) return;
 
                 const data = await res.json();
 
-                // Update Header Info
-                if (fullReload) {
-                    document.getElementById('header-client-name').innerText = data.client_name;
-                    headerAvatar.innerText = getInitials(data.client_name);
-
-                    // Link
-                    document.getElementById('header-case-link').href = `/admin/claims/case/${data.case_id}/change/`;
-
-                    // Clear loading spinner
-                    chatMessages.innerHTML = `<div class="absolute inset-0 opacity-5 pointer-events-none" style="background-image: radial-gradient(#cbd5e1 1px, transparent 1px); background-size: 20px 20px;"></div>`;
-                }
+                // Update Header info
+                document.getElementById('header-client-name').innerText = data.client_name;
+                headerAvatar.innerHTML = getInitials(data.client_name);
+                document.getElementById('header-case-link').href = `/admin/claims/case/${data.case_id}/change/`;
+                document.getElementById('header-details').innerText = `ID: ${data.case_id.split('-')[0]}`;
 
                 if (data.messages && data.messages.length > 0) {
-                    renderMessages(data.messages, data.client_name);
+                    data.messages.forEach(msg => {
+                        if (msg.id > lastMsgId) {
+                            appendMessage(msg, data.client_name);
+                            lastMsgId = msg.id;
+                        }
+                    });
+                    scrollToBottom();
                 }
             } catch (e) {
                 console.error("Error fetching messages:", e);
             }
         }
 
-        function renderMessages(messages, clientName) {
-            let scroll = false;
-
-            messages.forEach(msg => {
-                if (msg.id > lastMsgId) {
-                    lastMsgId = msg.id;
-                    appendMessage(msg, clientName);
-                    scroll = true;
-                }
-            });
-
-            if (scroll) {
-                scrollToBottom();
-            }
-        }
-
         function appendMessage(msg, clientName) {
-            const isMe = (msg.direction === 'OUT'); // Admin sent it
+            const isClient = (msg.direction === 'IN');
 
-            const div = document.createElement('div');
-            div.className = `flex w-full mb-4 relative z-10 animate-fade-in-up ${isMe ? 'justify-end' : 'justify-start'}`;
+            const row = document.createElement('div');
+            row.className = `flex flex-col animate-fade-in-up w-full ${isClient ? 'items-start' : 'items-end'}`;
 
-            // Bubble Styling
-            const bubbleBase = "max-w-[75%] px-5 py-3 shadow-sm text-sm leading-relaxed relative break-words";
+            const wrapper = document.createElement('div');
+            wrapper.className = `flex max-w-[80%] ${isClient ? 'flex-row' : 'flex-row-reverse'} items-end gap-2`;
 
-            // Client: White bubble, sharp left corner (optional), left avatar
-            // Admin: Gradient bubble, sharp right corner (optional), no avatar (or implicit)
+            // Avatar for message
+            const avatar = document.createElement('div');
+            avatar.className = `w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold shadow-sm ${isClient ? 'bg-gray-200 text-gray-600' : 'bg-blue-100 text-blue-600'}`;
+            avatar.innerHTML = isClient ? getInitials(clientName) : '<i class="fas fa-headset"></i>';
+            wrapper.appendChild(avatar);
 
-            const bubbleClass = isMe
-                ? 'admin-bubble-bg text-white rounded-2xl rounded-tr-sm ml-12' // Using fallback custom class
-                : 'client-bubble-bg text-gray-800 dark:text-gray-100 rounded-2xl rounded-tl-sm border border-gray-100 dark:border-gray-700';
-
-            const timeClass = isMe ? 'text-blue-100' : 'text-gray-400';
-            const initials = getInitials(clientName);
+            // Bubble
+            const bubble = document.createElement('div');
+            bubble.className = `px-4 py-2.5 rounded-2xl text-[14px] leading-relaxed shadow-sm break-words relative min-w-[60px] ${isClient ? 'bubble-client rounded-bl-sm' : 'bubble-admin rounded-br-sm'}`;
 
             let content = msg.content || "";
-            // Safe HTML (Newlines)
-            content = content.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>');
+            // Parse links
+            content = content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            content = content.replace(/\n/g, '<br>');
 
-            // Checkmark for sent messages
-            const checkIcon = isMe ? `<svg class="w-3 h-3 text-blue-200 ml-1 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>` : '';
+            // Highlight files
+            const fileRegex = /Document nou atașat: \[(.*?)\]\((.*?)\)/g;
+            content = content.replace(fileRegex, '<a href="$2" target="_blank" class="inline-flex items-center gap-1.5 bg-black/5 hover:bg-black/10 px-2 py-1 rounded text-sm font-medium transition-colors"><i class="fas fa-file-pdf text-red-500"></i> $1</a>');
 
-            // Layout
-            if (isMe) {
-                // Admin Layout
-                div.innerHTML = `
-                    <div class="${bubbleBase} ${bubbleClass} group">
-                        <div class="select-text">${content}</div>
-                        <div class="flex items-center justify-end mt-1 gap-1 select-none">
-                            <span class="text-[10px] opacity-80 ${timeClass}">${msg.timestamp}</span>
-                            ${checkIcon}
-                        </div>
-                    </div>
-                `;
-            } else {
-                // Client Layout (with Avatar)
-                div.innerHTML = `
-                    <div class="flex items-end gap-2 max-w-[85%]">
-                        <div class="w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-xs font-bold shadow-sm flex-shrink-0 mb-1">
-                            ${initials}
-                        </div>
-                        <div class="${bubbleBase} ${bubbleClass}">
-                             <div class="select-text">${content}</div>
-                             <div class="flex items-center justify-end mt-1 select-none">
-                                <span class="text-[10px] ${timeClass} flex items-center gap-1">
-                                    ${msg.timestamp}
-                                    ${msg.channel === 'WHATSAPP' ? '<svg class="w-3 h-3 text-green-500" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>' : ''}
-                                </span>
-                             </div>
-                        </div>
-                    </div>
-                `;
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            if(!content.includes('<a href=')) {
+                 content = content.replace(urlRegex, '<a href="$1" target="_blank" class="underline underline-offset-2 hover:opacity-80">$1</a>');
             }
 
-            chatMessages.appendChild(div);
+            bubble.innerHTML = content;
+            wrapper.appendChild(bubble);
+            row.appendChild(wrapper);
+
+            // Timestamp and Channel Info
+            const metaContainer = document.createElement('div');
+            metaContainer.className = `text-[9px] text-gray-400 mt-1 flex items-center gap-1 uppercase font-bold tracking-wider ${isClient ? 'ml-8' : 'mr-8'}`;
+
+            let channelIcon = '';
+            if (msg.channel === 'WEB') channelIcon = '<i class="fas fa-globe text-blue-400"></i>';
+            else if (msg.channel === 'WHATSAPP') channelIcon = '<i class="fab fa-whatsapp text-green-500"></i>';
+
+            metaContainer.innerHTML = `${channelIcon} ${msg.timestamp}`;
+            row.appendChild(metaContainer);
+
+            chatMessages.appendChild(row);
         }
 
         function scrollToBottom() {
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            chatMessages.scrollTo({
+                top: chatMessages.scrollHeight,
+                behavior: 'smooth'
+            });
         }
 
-        // --- 4. Sending Messages ---
+        // --- 4. Send Message ---
         document.getElementById('chat-form').addEventListener('submit', async function(e) {
             e.preventDefault();
+            if (!currentCaseId) return;
+
             const text = msgInput.value.trim();
-            if (!text || !currentCaseId) return;
+            if (!text) return;
 
-            // UI Optimistic Update (Show immediately as "sending")
             msgInput.value = '';
-            msgInput.style.height = 'auto'; // Reset height
+            msgInput.style.height = 'auto';
 
-            // Show typing indicator or disable button to prevent double send
             document.getElementById('typing-indicator').classList.remove('hidden');
+            document.getElementById('chat-form').querySelector('button[type="submit"]').disabled = true;
 
             try {
                 const res = await fetch(`/bot/admin/api/send/${currentCaseId}/`, {
@@ -412,17 +371,16 @@
                 });
 
                 document.getElementById('typing-indicator').classList.add('hidden');
+                document.getElementById('chat-form').querySelector('button[type="submit"]').disabled = false;
+                msgInput.focus();
 
                 if (res.ok) {
                     const data = await res.json();
-                    // Append immediately
                     if (data.message.id > lastMsgId) {
-                         lastMsgId = data.message.id;
-                         // Pass clientName from header for consistent API, though "OUT" msg doesn't use it
                          appendMessage(data.message, document.getElementById('header-client-name').innerText);
+                         lastMsgId = data.message.id;
                          scrollToBottom();
                     }
-                    // Refresh conversations list to update "last message" snippet
                     fetchConversations();
                 } else {
                     alert("Eroare la trimitere.");
@@ -430,6 +388,7 @@
             } catch (e) {
                 console.error(e);
                 document.getElementById('typing-indicator').classList.add('hidden');
+                document.getElementById('chat-form').querySelector('button[type="submit"]').disabled = false;
                 alert("Eroare conexiune.");
             }
         });
@@ -437,11 +396,10 @@
         // Auto-resize textarea
         msgInput.addEventListener('input', function() {
             this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 120) + 'px'; // Max height 120px
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
             if (this.value === '') this.style.height = 'auto';
         });
 
-        // Enter to send (Shift+Enter for new line)
         msgInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -451,7 +409,7 @@
 
         // Start Sidebar Polling
         fetchConversations();
-        convInterval = setInterval(fetchConversations, 3000); // Every 3s update list
+        convInterval = setInterval(fetchConversations, 3000);
 
         // Helper: CSRF
         function getCookie(name) {
@@ -469,27 +427,10 @@
             return cookieValue;
         }
 
-        // Cleanup on navigate away (though mostly SPA behavior here)
         window.onbeforeunload = function() {
             if (convInterval) clearInterval(convInterval);
             if (msgInterval) clearInterval(msgInterval);
         };
     });
 </script>
-<style>
-    /* Simple Fade In Animation */
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(10px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    .animate-fade-in-up {
-        animation: fadeInUp 0.3s ease-out forwards;
-    }
-</style>
 {% endblock %}
