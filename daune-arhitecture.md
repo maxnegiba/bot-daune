@@ -125,3 +125,161 @@ The Django Admin interface is heavily customized to serve as a CRM and live chat
 - **Race Conditions:** Solved via `case.objects.filter().update()` for flag updates instead of `case.save()`. Client instances are refreshed from the database (`client.refresh_from_db()`) before updates in async tasks.
 - **Email Security:** Filenames derived from Document display names are sanitized (slashes replaced with underscores) before attachment to prevent traversal attacks.
 - **Silent Processing:** The Web Chat UI permits document uploads even when a case is `is_human_managed`. These trigger OCR and DB updates "silently" via `silent=True`, without interrupting the human agent's conversation flow.
+
+## 9. System Diagrams
+
+This section contains Mermaid.js diagrams illustrating the core components and workflows of the Auto Daune system. You can view these diagrams in any markdown viewer that supports Mermaid (like GitHub, GitLab, or Notion).
+
+### 9.1 High-Level System Architecture
+
+This diagram shows how external services (Twilio, SendGrid, OpenAI) interact with the core Django application, PostgreSQL database, and Celery workers.
+
+```mermaid
+graph TD
+    %% External Interfaces
+    UserWA[User WhatsApp] <-->|Messages/Media| Twilio(Twilio API)
+    UserWeb[User Web Chat] <-->|HTTP/REST| Nginx(Nginx/Gunicorn)
+    Insurer[Insurer] <-->|Emails| MailServer(IMAP/SMTP)
+
+    %% Application Core
+    Twilio -->|Webhook POST| Nginx
+    Nginx <--> Django[Django App Core]
+
+    %% Internal Components
+    Django <--> DB[(PostgreSQL)]
+    Django -->|Delay Tasks| RedisBroker(Redis Broker)
+    RedisBroker --> Celery[Celery Workers]
+
+    %% Worker Actions
+    Celery <--> DB
+    Celery -->|OCR Requests| OpenAI(OpenAI Vision API)
+    Celery -->|Send Emails| SendGrid(SendGrid SMTP)
+    Celery <-->|Read Replies| MailServer
+
+    %% Admin
+    Admin[Human Agent] <-->|Dashboard| Nginx
+
+    classDef external fill:#f9f,stroke:#333,stroke-width:2px;
+    class UserWA,UserWeb,Insurer,Twilio,SendGrid,OpenAI,MailServer external;
+    classDef db fill:#0f0,stroke:#333,stroke-width:2px;
+    class DB,RedisBroker db;
+```
+
+### 9.2 FlowManager State Machine
+
+This diagram illustrates the `Case.Stage` transitions managed by `FlowManager`.
+
+```mermaid
+stateDiagram-v2
+    [*] --> GREETING: New User Message
+
+    GREETING --> COLLECTING_DOCS: Chooses Flow
+
+    state COLLECTING_DOCS {
+        [*] --> Uploading
+        Uploading --> OCR_Processing: Send Image/PDF
+        OCR_Processing --> Uploading: Missing Docs
+        OCR_Processing --> Validated: All Mandatory Docs Present
+    }
+
+    COLLECTING_DOCS --> SELECTING_GUILTY_INSURER: Validated
+    SELECTING_GUILTY_INSURER --> SELECTING_RESOLUTION: Selects Insurer
+
+    SELECTING_RESOLUTION --> SIGNING_MANDATE: Chooses Option (e.g., Regie Proprie)
+
+    SIGNING_MANDATE --> PROCESSING_INSURER: User Signs PDF Mandate
+
+    state PROCESSING_INSURER {
+        [*] --> SendClaimEmail
+        SendClaimEmail --> WaitInsurerReply
+        WaitInsurerReply --> ForwardToUser: Email Received
+        ForwardToUser --> WaitUserReply
+        WaitUserReply --> DebounceTask: User Chat Reply
+        DebounceTask --> SendClaimEmail: Send Grouped Email
+    }
+
+    PROCESSING_INSURER --> OFFER_DECISION: User sends keyword (accept/schimb)
+
+    OFFER_DECISION --> PROCESSING_INSURER: Revert to waiting (e.g., changed option)
+    OFFER_DECISION --> CLOSED: Case Settled
+
+    CLOSED --> [*]
+```
+
+### 9.3 Document Analysis Pipeline (OCR)
+
+This sequence diagram details how an uploaded document is processed, supporting PDFs, single images, and multi-image scanning.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant FlowManager
+    participant Celery as Celery Worker
+    participant Analyzer as DocumentAnalyzer
+    participant OpenAI as OpenAI Vision API
+    participant DB as PostgreSQL
+
+    User->>FlowManager: Uploads File (PDF/JPG)
+    FlowManager->>DB: Save CaseDocument
+    FlowManager->>Celery: delay(analyze_document_task)
+    Celery->>Analyzer: analyze(file_path)
+
+    alt is PDF
+        Analyzer->>Analyzer: PyMuPDF: Render Page 0 to PNG
+    else is Image
+        Analyzer->>Analyzer: Pillow: Load & Split Image
+    end
+
+    Analyzer->>OpenAI: POST Image (Base64) + Prompt
+    OpenAI-->>Analyzer: Return JSON (tip_document, date_extrase)
+
+    alt tip_document == UNKNOWN
+        Analyzer-->>Celery: Return UNKNOWN
+        Celery->>FlowManager: Trigger 15s wait (Multi-image fallback)
+        FlowManager->>Analyzer: analyze_multiple(images[])
+        Analyzer->>OpenAI: POST multiple images
+        OpenAI-->>Analyzer: Return unified JSON
+    end
+
+    Analyzer->>Analyzer: _normalize_data (Uppercase, Trim)
+    Analyzer-->>Celery: Clean JSON Data
+
+    Celery->>DB: atomic update Case flags (has_car_identity, etc.)
+    Celery->>User: Notify status (Missing docs or Validated)
+```
+
+### 9.4 Asynchronous Email Relay (Debounce & Polling)
+
+This diagram shows how the system bridges real-time chat with slow email responses without flooding the insurer's inbox.
+
+```mermaid
+sequenceDiagram
+    participant UserChat as User (Web/WA)
+    participant Django as Django/FlowManager
+    participant Celery as Celery Worker
+    participant IMAP as Mail Server (Inbox)
+    participant Insurer
+
+    %% Incoming Email Flow
+    loop Every 2 Minutes (Celery Beat)
+        Celery->>IMAP: check_email_replies_task()
+        IMAP-->>Celery: Unread Emails
+        opt If Email matches Case ID
+            Celery->>Django: Save Attachments (CaseDocument)
+            Celery->>UserChat: Forward Email text & Attachment Links
+        end
+    end
+
+    %% Outgoing Chat Debounce Flow
+    UserChat->>Django: Sends Chat Message 1
+    Django->>Celery: trigger_delayed_relay_task (in 30 min)
+
+    UserChat->>Django: Sends Chat Message 2 (5 mins later)
+    Django->>Django: Grouped in DB
+
+    Note over Celery: 30 minutes pass...
+
+    Celery->>Django: Execute delayed task
+    Django->>Django: Aggregate Message 1 & 2
+    Django->>Insurer: Send 1 Email to Insurer via SendGrid
+```
